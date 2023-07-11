@@ -1,0 +1,37 @@
+[project]
+name = "apstra_bp_consolidation"
+version = "0.0.1"
+description = "Consolidate TOR blueprint is the main blueprint as access switch pairs"
+authors = [ { name = "Charlie Kim", email = "ckim@juniper.net"} ]
+requires-python = ">=3.9"
+dependencies = [
+    "requests == 2.29.0",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.tox]
+legacy_tox_ini = """
+    [tox]
+    envlist = py39
+    skipsdist = True
+    isolated_build = True
+
+    [pytest]
+    log_cli = True
+    log_cli_level = DEBUG
+    console_output_style = progress
+
+    [testenv]
+    description = run the tests with pytest
+    package = wheel
+    wheel_build_env = .pkg
+    deps =
+        -rrequirements.txt
+        pytest>=6
+    commands =
+        pytest {tty:--color=yes} {posargs:tests}
+
+"""
