@@ -1,6 +1,6 @@
-#!/usr/bin/env python3.11
+#!/usr/bin/env python3
 
-from apstra_session import CkApstraSession
+from apstra_bp_consolidation.apstra_session import CkApstraSession
 
 class CkApstraBlueprint:
 
@@ -104,6 +104,22 @@ class CkApstraBlueprint:
         '''
         url = f"{self.url_prefix}/batch"
         self.session.session.post(url, json=batch_spec, params=params)
+
+    def cts_single_ae_generic_system(self, gs_label) -> list:
+        '''
+        Get the CTS of generic system with single AE
+        '''
+        ct_list_spec = f"match(node('system', label='{gs_label}').out().node('interface', if_type='port_channel', name='ae2').out().node('link').in_().node(name='ae1').out().node('ep_group').in_().node('ep_application_instance').out().node('ep_endpoint_policy', policy_type_name='batch', name='batch').where(lambda ae1, ae2: ae1 != ae2 )).distinct(['batch'])"
+        ct_list = [ x['batch']['id'] for x in self.query(ct_list_spec) ]
+        return ct_list
+
+    def revert(self):
+        '''
+        Revert the blueprint
+        '''
+        url = f"{self.url_prefix}/revert"
+        revert_result = self.session.session.post(url, json="", params={"aync": "full"})
+        print(f"Revert result: {revert_result.json()}")
 
 
 if __name__ == "__main__":
