@@ -80,6 +80,7 @@ class CkApstraBlueprint:
             # raise ValueError(f"Error creating generic system: {created_generic_system=}")
             print(f"Generic system not created: {created_generic_system=}")
             return []
+        print(f"{created_generic_system.json()=}")
         return created_generic_system.json()['ids']
 
     def patch_leaf_server_link(self, link_spec: dict) -> None:
