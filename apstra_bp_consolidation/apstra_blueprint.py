@@ -66,7 +66,7 @@ class CkApstraBlueprint:
 
     def add_generic_system(self, gs_spec: dict) -> list:
         """
-        Add a generic system to the blueprint.
+        Add a generic system (and access switch pair) to the blueprint.
 
         Args:
             gs_spec: The specification of the generic system.
@@ -77,10 +77,8 @@ class CkApstraBlueprint:
         url = f"{self.url_prefix}/switch-system-links"
         created_generic_system = self.session.session.post(url, json=gs_spec)
         if created_generic_system is None or len(created_generic_system.json()) == 0 or 'ids' not in created_generic_system.json():
-            # raise ValueError(f"Error creating generic system: {created_generic_system=}")
-            print(f"Generic system not created: {created_generic_system=}")
+            print(f"add_generic_system(): System not created: {created_generic_system=}")
             return []
-        print(f"{created_generic_system.json()=}")
         return created_generic_system.json()['ids']
 
     def patch_leaf_server_link(self, link_spec: dict) -> None:
@@ -98,6 +96,13 @@ class CkApstraBlueprint:
         Apply policies in a batch
         '''
         return self.session.session.patch(f"{self.url_prefix}/obj-policy-batch-apply", json=policy_spec, params=params)
+
+    def patch_node(self, node, patch_spec, params=None):
+        '''
+        Patch node data
+        '''
+        return self.session.session.patch(f"{self.url_prefix}/nodes/{node}", json=patch_spec, params=params)
+
 
     def batch(self, batch_spec: dict, params=None) -> None:
         '''

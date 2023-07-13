@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import time
 
 from apstra_bp_consolidation.apstra_session import CkApstraSession
 from apstra_bp_consolidation.apstra_blueprint import CkApstraBlueprint
@@ -16,7 +17,7 @@ def build_links_dict(links_dict:dict) -> dict:
     Build "links" data from the links query
     It is assumed that the interface names are in et-0/0/48-b format
     '''
-    print(f"{links_dict=}")
+    # print(f"{links_dict=}")
     link_candidate = {
             "lag_mode": "lacp_active",
             "system_peer": None,
@@ -48,7 +49,7 @@ def build_links_dict(links_dict:dict) -> dict:
         raise Exception(f"Unknown interface name {original_intf_name}")
     return link_candidate
 
-def build_access_switch_pair_spec(old_generic_system_physical_links, main_bp, old_generic_system_label, access_switch_interface_map_label) -> dict:
+def build_access_switch_pair_spec(old_generic_system_physical_links, old_generic_system_label) -> dict:
     access_switch_pair_spec = {
         "links": [build_links_dict(x) for x in old_generic_system_physical_links],
         "new_systems": None
@@ -58,6 +59,7 @@ def build_access_switch_pair_spec(old_generic_system_physical_links, main_bp, ol
         sample_data = json.load(file)
 
     access_switch_pair_spec['new_systems'] = sample_data['new_systems']
+    access_switch_pair_spec['new_systems'][0]['label'] = old_generic_system_label
 
     return access_switch_pair_spec
 
@@ -84,7 +86,7 @@ def main(apstra: str, config: dict):
 
     old_generic_system_physical_links = main_bp.query(f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='ethernet', name='gs_intf').out().node('link', name='link').in_().node('interface', name='leaf_intf').in_().node('system', name='leaf').where(lambda gs_intf, leaf_intf: gs_intf != leaf_intf)")
 
-    access_switch_pair_spec = build_access_switch_pair_spec(old_generic_system_physical_links, main_bp, old_generic_system_label, access_switch_interface_map_label)
+    access_switch_pair_spec = build_access_switch_pair_spec(old_generic_system_physical_links, old_generic_system_label)
 
 
 
@@ -161,7 +163,26 @@ def main(apstra: str, config: dict):
     access_switch_pair_created = main_bp.add_generic_system(access_switch_pair_spec)
     print(f"{access_switch_pair_created=}")
 
-
+    while True:
+        new_systems = main_bp.query(f"node('link', label='{access_switch_pair_created[0]}', name='link').in_().node('interface').in_().node('system', name='leaf').out().node('redundancy_group', name='redundancy_group')")
+        # There should be 5 links (including the peer link)
+        if len(new_systems) == 2:
+            break
+        print(f"Waiting for new systems to be created: {len(new_systems)=}")
+        time.sleep(3)
+    # The first entry is the peer link
+    # rename redundancy group
+    main_bp.patch_node(new_systems[0]['redundancy_group']['id'], {"label": f"{old_generic_system_label}-pair" })
+    # rename each access switch for the label and hostname
+    for leaf in new_systems:
+        given_label = leaf['leaf']['label']
+        if given_label[-1] == '1':
+            new_label = f"{old_generic_system_label}a"
+        elif given_label[-1] == '2':
+            new_label = f"{old_generic_system_label}b"
+        else:
+            raise Exception(f"During renaming leaf names: Unexpected leaf label {given_label}")
+        main_bp.patch_node(leaf['leaf']['id'], {"label": new_label, "hostname": new_label })
 
     # create new generic systems
 

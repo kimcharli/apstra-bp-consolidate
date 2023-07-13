@@ -12600,7 +12600,7 @@
             },
             "port_channel_id_max": 0,
             "system_type": "switch",
-            "label": "atltor-r5r14",
+            "label": "atl1tor-r5r14",
             "logical_device": {
                 "id": "320d29b3-4dae-4fbb-a1c2-a480e42ac928",
                 "display_name": "_ATL-AS-5120-48T",
