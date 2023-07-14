@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 
+import yaml
+
 from apstra_bp_consolidation.apstra_session import CkApstraSession
+
+
+def pretty_yaml(data: dict, label: str) -> None:
+    print(f"==== {label}\n{yaml.dump(data)}\n====")
+
 
 class CkApstraBlueprint:
 
@@ -17,6 +24,8 @@ class CkApstraBlueprint:
         self.id = None
         self.get_id()
         self.url_prefix = f"{self.session.url_prefix}/blueprints/{self.id}"
+
+        self.system_id_cache = {} # { system_label: { id: id, interface_map_id: id, device_profile_id: id }
 
     def get_id(self) -> str:
         """
@@ -60,9 +69,19 @@ class CkApstraBlueprint:
         return response.json()['items']
     
     # return the first entry for the system
-    def get_system_with_im(self, label):
-        return self.query(f"node('system', label='{label}', name='system').out().node('interface_map', name='im')")[0]
+    def get_system_with_im(self, system_label):
+        system_im = self.query(f"node('system', label='{system_label}', name='system').out().node('interface_map', name='im')")[0]
+        if system_label not in self.system_id_cache:
+            self.system_id_cache[system_label] = system_im['system']['id']
+            if  'interface_map_id' not in self.system_id_cache[system_label]:
+                self.system_id_cache[system_label]['interface_map_id'] = system_im['im']['id']
+                self.system_id_cache[system_label]['device_profile_id'] = system_im['im']['device_profile_id']
+        return system_im
 
+    def get_system_id(self, system_label):
+        if system_label not in self.system_id_cache:
+            self.system_id_cache[system_label] = { 'id': self.query(f"node('system', label='{system_label}', name='system')")[0]['system']['id'] }
+        return self.system_id_cache[system_label]['id']
 
     def add_generic_system(self, gs_spec: dict) -> list:
         """
@@ -74,12 +93,39 @@ class CkApstraBlueprint:
         Returns:
             The ID of the switch-system-link ids.
         """
+        existing_system = self.query(f"node('system', label='{gs_spec['new_systems'][0]['label']}', name='system')")
+        if len(existing_system) > 0:
+            print(f"==== skipping: add_generic_system(): System already exists: {gs_spec['new_systems'][0]['label']=}")
+            return []
         url = f"{self.url_prefix}/switch-system-links"
         created_generic_system = self.session.session.post(url, json=gs_spec)
         if created_generic_system is None or len(created_generic_system.json()) == 0 or 'ids' not in created_generic_system.json():
-            print(f"add_generic_system(): System not created: {created_generic_system=}")
+            # print(f"add_generic_system(): System not created: {created_generic_system=} for {gs_spec=}")
+            pretty_yaml(gs_spec, "failed spec()")
             return []
         return created_generic_system.json()['ids']
+
+    def get_transformation_id(self, system_label, intf_name, speed) -> int:
+        '''
+        Get the transformation ID for the interface
+
+        Args:
+            system_label: The label of the system
+            intf_name: The name of the interface
+            speed: The speed of the interface in the format of '10G'
+        '''
+        system_im = self.get_system_with_im(system_label)
+        device_profile = self.session.get_device_profile(system_im['im']['device_profile_id'])
+
+        for port in device_profile['ports']:
+            for transformation in port['transformations']:
+                # self.logger.debug(f"{transformation=}")
+                for intf in transformation['interfaces']:
+                    # if intf['name'] == intf_name:
+                    #     self.logger.debug(f"{intf=}")
+                    if intf['name'] == intf_name and intf['speed']['unit'] == speed[-1:] and intf['speed']['value'] == int(speed[:-1]): 
+                        # self.logger.warning(f"{intf_name=}, {intf=}")
+                        return transformation['transformation_id']
 
     def patch_leaf_server_link(self, link_spec: dict) -> None:
         """

@@ -21,6 +21,8 @@ class CkApstraSession:
 
         self.login()
 
+        self.device_profile_cache = {} # { device_profile_id: data }
+
     def login(self) -> None:
         """
         Log in to the Apstra controller.
@@ -35,7 +37,7 @@ class CkApstraSession:
         self.token = response.json()["token"]
         self.session.headers.update({'AuthToken': self.token})
 
-    def get_device_profile(self, name: str = None) -> dict:
+    def get_device_profile(self, device_profile_name: str = None) -> dict:
         """
         Get the device profile with the specified name.
 
@@ -45,18 +47,14 @@ class CkApstraSession:
         Returns:
             The device profile, or None if the device profile does not exist.
         """
-        if name is None:
+        if device_profile_name is None:
             print("get_device_profile: name is None")
             return None
-
-        url = f"{self.url_prefix}/device-profiles"
-        device_profiles = self.session.get(url).json()['items']
-        for device_profile in device_profiles:
-            # print(f"{device_profile.keys()=}\n {device_profile=}")
-            if device_profile['id'] == name:
-                return device_profile
-
-        return None
+        if device_profile_name not in self.device_profile_cache:
+            url = f"{self.url_prefix}/device-profiles"
+            device_profiles = self.session.get(url).json()['items']
+            self.device_profile_cache[device_profile_name] = [ x for x in device_profiles if x['id'] == device_profile_name ][0]
+        return self.device_profile_cache[device_profile_name]
 
     def get_logical_device(self, id: int) -> dict:
         """
