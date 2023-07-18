@@ -101,12 +101,12 @@ class CkApstraBlueprint:
         Returns:
             The ID of the switch-system-link ids.
         """
-        print(f"==== BP: add_generic_system(): {gs_spec['links']=}")
+        # print(f"==== BP: add_generic_system(): {gs_spec['links']=}")
         existing_system_query = f"node('system', label='{gs_spec['new_systems'][0]['label']}', name='system')"
-        print(f"====== BP: add_generic_system(): {existing_system_query=}")
+        # print(f"====== BP: add_generic_system(): {existing_system_query=}")
         existing_system = self.query(existing_system_query)
         if len(existing_system) > 0:
-            print(f"====== BP: skipping: add_generic_system(): System already exists: {gs_spec['new_systems'][0]['label']=}")
+            # print(f"====== BP: skipping: add_generic_system(): System already exists: {gs_spec['new_systems'][0]['label']=}")
             return []
         url = f"{self.url_prefix}/switch-system-links"
         created_generic_system = self.session.session.post(url, json=gs_spec)
@@ -154,12 +154,47 @@ class CkApstraBlueprint:
         '''
         return self.session.session.patch(f"{self.url_prefix}/obj-policy-batch-apply", json=policy_spec, params=params)
 
+    def patch_leaf_server_link_labels(self, spec, params=None, print_prefix=None):
+        '''
+        Update the generic system links
+        '''
+        if print_prefix:
+            print(f"==== BP.patch_leaf_server_link_labels() {print_prefix}: {spec=}")
+        return self.session.session.patch(f"{self.url_prefix}/leaf-server-link-labels", json=spec, params=params)
+
     def patch_node(self, node, patch_spec, params=None):
         '''
         Patch node data
         '''
         return self.session.session.patch(f"{self.url_prefix}/nodes/{node}", json=patch_spec, params=params)
 
+    def post_tagging(self, nodes, tags_to_add = None, tags_to_remove = None, params=None, print_prefix=None):
+        '''
+        Update the tagging
+
+        tagging_sepc example
+            "add": [ "testtest"],
+            "tags": [],
+            "nodes": [ "atl1tor-r5r14a<->_atl_rack_1_001_sys010(link-000000002)[1]" ],
+            "remove": [],
+            "assigned_to_all": []        
+        '''
+        tagging_spec = {
+            'add': [],
+            'tags': [],
+            'nodes': [],
+            'remove': [],
+            'assigned_to_all': [],
+        }
+        if not tags_to_add and not tags_to_remove:
+            print(f"==== BP.post_tagging(): No tags to add or remove")
+            return
+        tagging_spec['nodes'] = nodes
+        tagging_spec['add'] = tags_to_add
+        tagging_spec['remove'] = tags_to_remove
+        if print_prefix:
+            print(f"==== BP.post_tagging() {print_prefix}: {nodes=}, {tags_to_add=}, {tags_to_remove=}, {tagging_spec=}")
+        return self.session.session.post(f"{self.url_prefix}/tagging", json=tagging_spec, params={'aync': 'full'})
 
     def batch(self, batch_spec: dict, params=None) -> None:
         '''
