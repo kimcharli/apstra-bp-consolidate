@@ -73,7 +73,7 @@ def pull_generic_system(tor_bp, switch_label_pair: list) -> dict:
     return generic_systems_data
 
 # generic system data: generic_system_label.link.dict
-def new_generic_systems(main_bp, generic_systems_data:dict) -> dict:
+def new_generic_systems(main_bp, generic_system_data:dict) -> dict:
     """
     Create new generic systems in the main blueprint based on the generic systems in the TOR blueprint. 
         <generic_system_label>:
@@ -91,7 +91,7 @@ def new_generic_systems(main_bp, generic_systems_data:dict) -> dict:
     print(f"==== Creating new generic systems in {main_bp.label} for {len(generic_system_data)} ====")
     system_id_cache = {}
 
-    for generic_system_label, generic_system_data in generic_systems_data.items():
+    for generic_system_label, generic_system_data in generic_system_data.items():
         if main_bp.get_system_id(generic_system_label):
             # this generic system already exists
             print(f"====== skip: new_generic_systems() {generic_system_label} already exists in the main blueprint")
@@ -381,7 +381,7 @@ def main(apstra: str, config: dict):
     # generic system data: generic_system_label.link.dict
     generic_systems_data = pull_generic_system(tor_bp, switch_label_pair)
 
-    print(f"=== main: get generic_systems_data. {generic_systems_data=}")
+    print(f"=== main: get generic_systems_data. {len(generic_systems_data)=}")
 
     new_generic_systems(main_bp, generic_systems_data)
 
