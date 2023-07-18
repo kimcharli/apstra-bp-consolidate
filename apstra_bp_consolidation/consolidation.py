@@ -9,9 +9,13 @@ from apstra_bp_consolidation.apstra_blueprint import CkApstraBlueprint
 
 
 
-def pull_generic_system(tor_bp) -> dict:
+def pull_generic_system(tor_bp, switch_label_pair: list) -> dict:
     """
     Pull the generic system from the TOR blueprint.
+
+    Args:
+        tor_bp: The blueprint object.
+        switch_label_pair: The switch pair to pull the generic system from.    
 
     <generic_system_label>:
         <link_id>:
@@ -22,17 +26,20 @@ def pull_generic_system(tor_bp) -> dict:
             aggregate_link: <aggregate_link_id>
             tags: []
     """
+    print(f"==== Pulling generic system connected to {switch_label_pair=} of blueprint {tor_bp.label} ====")
     generic_systems_data = {}
-    generic_systems = tor_bp.query("node('system', role='generic', name='generic').out().node('interface', name='gs_intf').out().node('link', name='link').in_().node(name='sw_intf').in_().node('system', name='switch').where(lambda gs_intf, sw_intf: gs_intf != sw_intf)")
-    # print(f"==== sample generic system\n{yaml.dump(generic_systems[0])}\n====")
-    # pretty_yaml(generic_systems[0], "sample_generic_system")
-    aggregate_links = tor_bp.query("match(node('link', link_type='aggregate_link', name='aggregate_link').in_().node().out().node(name='member_interface').out().node('link', name='member_link'),node(name='aggregate_link').in_().node('interface').in_().node('system', name='system'))")
-    link_tags = tor_bp.query("node('system', role='generic', name='generic_system').out().node('interface').out().node('link', link_type='ethernet', name='link').in_().node('tag', name='tag')")
+    # generic systems data with member interfaces on both sides.
+    generic_systems = tor_bp.query(f"node('system', role='generic', name='generic').out().node('interface', name='gs_intf').out().node('link', name='link').in_().node(name='sw_intf').in_().node('system', label=is_in({switch_label_pair}), name='switch').where(lambda gs_intf, sw_intf: gs_intf != sw_intf)")
+    # aggregate links to associate them to the member interfaces
+    aggregate_links = tor_bp.query(f"match(node('link', link_type='aggregate_link', name='aggregate_link').in_().node().out().node(name='member_interface').out().node('link', name='member_link').in_().node().in_().node('system', label=is_in({switch_label_pair})),node(name='aggregate_link').in_().node('interface').in_().node('system', name='system'))")
     for gs in generic_systems:
+        # TODO: generalize upglinks processing
+        # most QFX5120 has port 48 and 49 as uplinks
         if gs['sw_intf']['if_name'] in ["et-0/0/48", "et-0/0/49"]:
             # those are uplinks
             continue
         generic_system_label = gs['generic']['label']
+        link_id = gs['link']['id']
         # create entry for this generic system if it doesn't exist
         if generic_system_label not in generic_systems_data.keys():
             generic_systems_data[generic_system_label] = {}
@@ -41,7 +48,7 @@ def pull_generic_system(tor_bp) -> dict:
         this_data['sw_if_name'] = gs['sw_intf']['if_name']
         this_data['speed'] = gs['link']['speed']
         # register this data as the link id
-        generic_systems_data[generic_system_label][gs['link']['id']] = this_data
+        generic_systems_data[generic_system_label][link_id] = this_data
         # pretty_yaml(generic_systems_data, "generic_systems_data")
     # update the aggregate link id on the associated member links
     for al in aggregate_links:
@@ -49,15 +56,23 @@ def pull_generic_system(tor_bp) -> dict:
             # those may be uplinks
             continue
         generic_systems_data[al['system']['label']][al['member_link']['id']]['aggregate_link'] = al['aggregate_link']['id']
+    # retrieve the tags information
+    # link_tags = tor_bp.query("node('system', role='generic', name='generic_system').out().node('interface').out().node('link', link_type='ethernet', name='link').in_().node('tag', name='tag')")
+    link_tags = tor_bp.query(f"match(node('tag', name='tag').out().node('link', name='member_link').in_().node('interface').in_().node('system', label=is_in({switch_label_pair}), name='switch'), node('system', role='generic', name='generic_system').out().node('interface').out().node('link', name='member_link'))")
     for tag in link_tags:
+        generic_system_label = tag['generic_system']['label']
+        member_link_id = tag['member_link']['id']
+        tag_value = tag['tag']['label']
         if tag['generic_system']['label'] not in generic_systems_data.keys():
             # this shouldn't happen
             continue
-        generic_systems_data[tag['generic_system']['label']][tag['link']['id']]['tags'].append(tag['tag']['label'])
-    print(f"==== generic systems pulled: {len(generic_systems_data)}")
+        generic_systems_data[generic_system_label][member_link_id]['tags'].append(tag_value)
+    # print(f"==== generic systems pulled: {len(generic_systems_data)}, {generic_systems_data=}")
+    print(f"====== generic systems pulled from {tor_bp.label}: {len(generic_systems_data)}")
+    # generic_system_label.link.dict
     return generic_systems_data
 
-
+# generic system data: generic_system_label.link.dict
 def new_generic_systems(main_bp, generic_systems_data:dict) -> dict:
     """
     Create new generic systems in the main blueprint based on the generic systems in the TOR blueprint. 
@@ -73,9 +88,14 @@ def new_generic_systems(main_bp, generic_systems_data:dict) -> dict:
 
     """
     # to cache the system id of the systems includin leaf
+    print(f"==== Creating new generic systems in {main_bp.label} for {len(generic_system_data)} ====")
     system_id_cache = {}
 
     for generic_system_label, generic_system_data in generic_systems_data.items():
+        if main_bp.get_system_id(generic_system_label):
+            # this generic system already exists
+            print(f"====== skip: new_generic_systems() {generic_system_label} already exists in the main blueprint")
+            continue
         generic_system_spec = {
             'links': [],
             'new_systems': [],
@@ -132,15 +152,28 @@ def new_generic_systems(main_bp, generic_systems_data:dict) -> dict:
         }
         generic_system_spec['new_systems'].append(new_system)
         # pretty_yaml(generic_system_spec, generic_system_label)
+        print(f"====== new_generic_systems() adding {generic_system_label} to the main blueprint")
         main_bp.add_generic_system(generic_system_spec)
 
+# generic system data: generic_system_label.link.dict
+def update_generic_systems_lacp(main_bp, switch_label_pair, tor_generic_systems_data):
+    """
+    Update LAG mode for the new generic systems
+    """
+    main_generic_system_data = pull_generic_system(main_bp, switch_label_pair)
+    # for generec_system_label, generic_system in generic_systems_data.items():
+    #     lag_data = {} # group_label: [ links ]        
+    #     for link_label, link_data in { k: v for k, v in generic_system.items() if 'aggregate_link' in v }.items():
+    #         lag_data[link_data['aggregate_link']] = link_label
+    pass
 
-def build_links_dict(links_dict:dict) -> dict:
+
+def build_switch_fabric_links_dict(links_dict:dict) -> dict:
     '''
     Build "links" data from the links query
     It is assumed that the interface names are in et-0/0/48-b format
     '''
-    # print(f"{links_dict=}")
+    # print(f"==== build_switch_fabric_links_dict() {len(links_dict)=}, {links_dict=}")
     link_candidate = {
             "lag_mode": "lacp_active",
             "system_peer": None,
@@ -169,23 +202,27 @@ def build_links_dict(links_dict:dict) -> dict:
         link_candidate['system_peer'] = 'second'
         link_candidate['system']['if_name'] = 'et-0/0/49'
     else:
-        raise Exception(f"Unknown interface name {original_intf_name}")
+        return None
     return link_candidate
 
-def build_access_switch_pair_spec(old_generic_system_physical_links, old_generic_system_label) -> dict:
-    access_switch_pair_spec = {
-        "links": [build_links_dict(x) for x in old_generic_system_physical_links],
+#     # old_generic_system_physical_links has a list of dict with generic, gs_intf, link, leaf_intf, and leaf 
+def build_switch_pair_spec(old_generic_system_physical_links, old_generic_system_label) -> dict:
+    # print(f"==== build_switch_pair_spec() with {len(old_generic_system_physical_links)=}, {old_generic_system_label}")
+    # print(f"===== build_switch_pair_spec() {old_generic_system_physical_links[0]=}")
+    switch_pair_spec = {
+        "links": [build_switch_fabric_links_dict(x) for x in old_generic_system_physical_links],
         "new_systems": None
     }
 
     with open('./tests/fixtures/switch-system-links-5120.json', 'r') as file:
         sample_data = json.load(file)
 
-    access_switch_pair_spec['new_systems'] = sample_data['new_systems']
-    access_switch_pair_spec['new_systems'][0]['label'] = old_generic_system_label
+    switch_pair_spec['new_systems'] = sample_data['new_systems']
+    switch_pair_spec['new_systems'][0]['label'] = old_generic_system_label
 
-    return access_switch_pair_spec
-
+    # del switch_pair_spec['new_systems']
+    print(f"====== build_switch_pair_spec() from {len(old_generic_system_physical_links)=}")
+    return switch_pair_spec
 
 
 
@@ -201,21 +238,34 @@ def main(apstra: str, config: dict):
     main_bp = CkApstraBlueprint(apstra, config['blueprint']['main']['name'])
     tor_bp = CkApstraBlueprint(apstra, config['blueprint']['tor']['name'])
     access_switch_interface_map_label = config['blueprint']['tor']['new_interface_map']
-
+    
     old_generic_system_label = config['blueprint']['tor']['torname']
-    old_generic_system_ae_list = main_bp.query(f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='port_channel', name='ae2').out().node('link').in_().node(name='ae1').where(lambda ae1, ae2: ae1 != ae2 )")
+    switch_label_pair = [ f"{old_generic_system_label}a", f"{old_generic_system_label}b"]
+    
+    # find the ae information for the old generic system in the main blueprint
+    old_generic_system_ae_query = f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='port_channel', name='ae2').out().node('link').in_().node(name='ae1').where(lambda ae1, ae2: ae1 != ae2 )"
+    old_generic_system_ae_list = main_bp.query(old_generic_system_ae_query, print_prefix="main: old_generic_system_ae_query")
     # the generic system should exist in main blueprint
     if len(old_generic_system_ae_list):
         old_generic_system_ae_id = old_generic_system_ae_list[0]['ae1']['id']
+    print(f"== main: {old_generic_system_ae_list=}")
+
+    # return
 
     cts = main_bp.cts_single_ae_generic_system(old_generic_system_label)
 
-    old_generic_system_physical_links = main_bp.query(f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='ethernet', name='gs_intf').out().node('link', name='link').in_().node('interface', name='leaf_intf').in_().node('system', name='leaf').where(lambda gs_intf, leaf_intf: gs_intf != leaf_intf)")
+    # capture links to the target old generic system in the main blueprint
+    old_generic_system_physical_links_query = f"node('system', label='{old_generic_system_label}', name='generic').out().node('interface', if_type='ethernet', name='gs_intf').out().node('link', name='link').in_().node('interface', name='leaf_intf').in_().node('system', name='leaf').where(lambda gs_intf, leaf_intf: gs_intf != leaf_intf)"
+    print(f"== main: {old_generic_system_physical_links_query=}")
+    # old_generic_system_physical_links has a list of dict with generic, gs_intf, link, leaf_intf, and leaf 
+    old_generic_system_physical_links = main_bp.query(old_generic_system_physical_links_query)
 
-    access_switch_pair_spec = build_access_switch_pair_spec(old_generic_system_physical_links, old_generic_system_label)
+    print(f"== main: about to call build_switch_pair_spec, {len(old_generic_system_physical_links)=}")
+    switch_pair_spec = build_switch_pair_spec(old_generic_system_physical_links, old_generic_system_label)
+    print(f"== main: {switch_pair_spec['links']=}")
 
-    pull_generic_system_data = pull_generic_system(tor_bp)
-    pretty_yaml(pull_generic_system_data, "pull_generic_system_data")
+    pull_generic_system_data = pull_generic_system(tor_bp, switch_label_pair)
+    # pretty_yaml(pull_generic_system_data, "pull_generic_system_data")
 
 
     # revert any staged changes
@@ -223,7 +273,7 @@ def main(apstra: str, config: dict):
     # tor_bp.revert()
 
     ########
-    # delete the old generic system
+    # delete the old generic system in main blueprint
     # all the CTs on old generic system are on the AE link
     if len(old_generic_system_ae_list):
         old_generic_system_label = config['blueprint']['tor']['torname']
@@ -236,6 +286,7 @@ def main(apstra: str, config: dict):
 
         cts = main_bp.cts_single_ae_generic_system(old_generic_system_label)
 
+        # old_generic_system_physical_links has a list of dict with generic, gs_intf, link, leaf_intf, and leaf 
         # old_generic_system_physical_links = main_bp.query(f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='ethernet').out().node('link', name='link')")
         old_generic_system_physical_links = main_bp.query(f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='ethernet', name='gs_intf').out().node('link', name='link').in_().node('interface', name='leaf_intf').in_().node('system', name='leaf').where(lambda gs_intf, leaf_intf: gs_intf != leaf_intf)")
 
@@ -276,6 +327,15 @@ def main(apstra: str, config: dict):
         }
         batch_result = main_bp.batch(batch_link_spec, params={"comment": "batch-api"})
         print(f"{batch_result=}")
+        while True:
+            if_generic_system_present = main_bp.query(f"node('system', label='{old_generic_system_label}')")
+            if len(if_generic_system_present) == 0:
+                break
+            print(f"== main: {if_generic_system_present=}")
+            time.sleep(3)
+            
+
+
 
 
     ########
@@ -289,9 +349,9 @@ def main(apstra: str, config: dict):
     # rack type _ATL-AS-5100-48T, _ATL-AS-5120-48T created and added
     # ATL-AS-LOOPBACK with 10.29.8.0/22
 
-    check_if_exists = main_bp.query(f"node('system', label='{old_generic_system_label}a', name='system')")
-    if len(check_if_exists) == 0:
-        access_switch_pair_created = main_bp.add_generic_system(access_switch_pair_spec)
+    existing_switches = main_bp.query(f"node('system', label='{old_generic_system_label}a', name='system')")
+    if len(existing_switches) == 0:
+        access_switch_pair_created = main_bp.add_generic_system(switch_pair_spec)
         print(f"{access_switch_pair_created=}")
 
         # wait for the new systems to be created
@@ -318,9 +378,15 @@ def main(apstra: str, config: dict):
 
     ########
     # create new generic systems
-    generic_systems_data = pull_generic_system(tor_bp)
+    # generic system data: generic_system_label.link.dict
+    generic_systems_data = pull_generic_system(tor_bp, switch_label_pair)
+
+    print(f"=== main: get generic_systems_data. {generic_systems_data=}")
 
     new_generic_systems(main_bp, generic_systems_data)
+
+    update_generic_systems_lacp(main_bp, switch_label_pair, generic_systems_data)
+
 
     ########
     # assign virtual networks
@@ -336,6 +402,6 @@ if __name__ == "__main__":
 
     with open('./tests/fixtures/config.yaml', 'r') as file:
         config = yaml.safe_load(file)
-    apstra = CkApstraSession("10.85.192.61", 443, "admin", "zaq1@WSXcde3$RFV")
+    apstra = CkApstraSession("nf-apstra.pslab.link", 443, "admin", "zaq1@WSXcde3$RFV")
     main(apstra, config)
 

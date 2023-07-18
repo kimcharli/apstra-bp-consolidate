@@ -50,7 +50,7 @@ class CkApstraBlueprint:
         """
         print(f"Blueprint ID: {self.id}")
 
-    def query(self, query: str) -> list:
+    def query(self, query: str, print_prefix: str = None) -> list:
         """
         Query the Apstra API.
 
@@ -60,12 +60,15 @@ class CkApstraBlueprint:
         Returns:
             The results of the query.
         """
+        if print_prefix is not None:
+            print(f"== BP.query() {print_prefix}: {query}")
         url = f"{self.url_prefix}/qe"
         payload = {
             "query": query
         }
         response = self.session.session.post(url, json=payload)
         # print (f"{query=}, {response.json()=}")
+        # the content should have 'items'. otherwise, the query would be invalid
         return response.json()['items']
     
     # return the first entry for the system
@@ -79,8 +82,13 @@ class CkApstraBlueprint:
         return system_im
 
     def get_system_id(self, system_label):
+        # cache the id of the system_label if not already cached
         if system_label not in self.system_id_cache:
-            self.system_id_cache[system_label] = { 'id': self.query(f"node('system', label='{system_label}', name='system')")[0]['system']['id'] }
+            system_query_result = self.query(f"node('system', label='{system_label}', name='system')")
+            # skip if the system does not exist
+            if len(system_query_result) == 0:
+                return None            
+            self.system_id_cache[system_label] = { 'id': system_query_result[0]['system']['id'] }
         return self.system_id_cache[system_label]['id']
 
     def add_generic_system(self, gs_spec: dict) -> list:
@@ -93,15 +101,18 @@ class CkApstraBlueprint:
         Returns:
             The ID of the switch-system-link ids.
         """
-        existing_system = self.query(f"node('system', label='{gs_spec['new_systems'][0]['label']}', name='system')")
+        print(f"==== BP: add_generic_system(): {gs_spec['links']=}")
+        existing_system_query = f"node('system', label='{gs_spec['new_systems'][0]['label']}', name='system')"
+        print(f"====== BP: add_generic_system(): {existing_system_query=}")
+        existing_system = self.query(existing_system_query)
         if len(existing_system) > 0:
-            print(f"==== skipping: add_generic_system(): System already exists: {gs_spec['new_systems'][0]['label']=}")
+            print(f"====== BP: skipping: add_generic_system(): System already exists: {gs_spec['new_systems'][0]['label']=}")
             return []
         url = f"{self.url_prefix}/switch-system-links"
         created_generic_system = self.session.session.post(url, json=gs_spec)
         if created_generic_system is None or len(created_generic_system.json()) == 0 or 'ids' not in created_generic_system.json():
             # print(f"add_generic_system(): System not created: {created_generic_system=} for {gs_spec=}")
-            pretty_yaml(gs_spec, "failed spec()")
+            # pretty_yaml(gs_spec, "failed spec()")
             return []
         return created_generic_system.json()['ids']
 
