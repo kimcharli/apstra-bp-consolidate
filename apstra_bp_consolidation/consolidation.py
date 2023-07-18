@@ -88,14 +88,15 @@ def new_generic_systems(main_bp, generic_system_data:dict) -> dict:
 
     """
     # to cache the system id of the systems includin leaf
-    print(f"==== new_generic_systems() Creating new generic systems in {main_bp.label} for {len(generic_system_data)} ====")
+    print(f"==== new_generic_systems() Creating new generic systems in {main_bp.label}: {len(generic_system_data)} ====")
     system_id_cache = {}
 
     for generic_system_label, generic_system_data in generic_system_data.items():
         if main_bp.get_system_id(generic_system_label):
             # this generic system already exists
-            print(f"     = skip: new_generic_systems() {generic_system_label} already exists in the main blueprint")
+            print(f"     = new_generic_systems() skipping: {generic_system_label} already exists in the main blueprint")
             continue
+        lag_group = {}
         generic_system_spec = {
             'links': [],
             'new_systems': [],
@@ -112,6 +113,12 @@ def new_generic_systems(main_bp, generic_system_data:dict) -> dict:
                     'if_name': link_data['sw_if_name'],
                 }                
             }
+            if 'aggregate_link' in link_data:
+                old_aggregate_link_id = link_data['aggregate_link']
+                if old_aggregate_link_id not in lag_group:
+                    lag_group[old_aggregate_link_id] = f"link{len(lag_group)+1}"
+                link_spec['lag_mode'] = 'lacp_active'
+                link_spec['group_label'] = lag_group[old_aggregate_link_id]
             generic_system_spec['links'].append(link_spec)
         new_system = {
             'system_type': 'server',
@@ -152,7 +159,7 @@ def new_generic_systems(main_bp, generic_system_data:dict) -> dict:
         }
         generic_system_spec['new_systems'].append(new_system)
         # pretty_yaml(generic_system_spec, generic_system_label)
-        print(f"     = new_generic_systems() adding {generic_system_label} to the main blueprint")
+        print(f"     = new_generic_systems() adding {generic_system_label} with {len(lag_group)} LAG in the blueprint {main_bp.label}")
         main_bp.add_generic_system(generic_system_spec)
 
 # generic system data: generic_system_label.link.dict
@@ -480,7 +487,8 @@ def main(apstra: str, config: dict):
 
     new_generic_systems(main_bp, generic_systems_data)
 
-    update_generic_systems_lag(main_bp, switch_label_pair, generic_systems_data)
+    # implemented in new_generic_systems
+    # update_generic_systems_lag(main_bp, switch_label_pair, generic_systems_data)
 
     update_generic_systems_link_tag(main_bp, generic_systems_data)
 
