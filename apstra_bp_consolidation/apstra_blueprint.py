@@ -186,13 +186,14 @@ class CkApstraBlueprint:
             'remove': [],
             'assigned_to_all': [],
         }
-        if not tags_to_add and not tags_to_remove:
-            print(f"==== BP.post_tagging(): No tags to add or remove")
-            return
+        if print_prefix is not None:
+            if not tags_to_add and not tags_to_remove:
+                print(f"==== BP.post_tagging(): {print_prefix}: No tags to add or remove")
+                return
         tagging_spec['nodes'] = nodes
         tagging_spec['add'] = tags_to_add
         tagging_spec['remove'] = tags_to_remove
-        if print_prefix:
+        if print_prefix is not None:
             print(f"==== BP.post_tagging() {print_prefix}: {nodes=}, {tags_to_add=}, {tags_to_remove=}, {tagging_spec=}")
         return self.session.session.post(f"{self.url_prefix}/tagging", json=tagging_spec, params={'aync': 'full'})
 

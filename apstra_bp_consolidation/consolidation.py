@@ -267,7 +267,9 @@ def update_generic_systems_link_tag(main_bp, tor_generic_systems_data):
                 print(f"     = update_generic_systems_link_tag() updating tag:  {tags=} on the link of {old_link_data['sw_label']}:{old_link_data['sw_if_name']}")
                 link_query = f"node('system', label='{generic_system_label}').out().node('interface').out().node('link', name='link').in_().node('interface', if_name='{old_link_data['sw_if_name']}').in_().node('system', label='{old_link_data['sw_label']}')"
                 target_link_result = main_bp.query(link_query)
-                tagged = main_bp.post_tagging([x['link']['id'] for x in target_link_result], tags_to_add=tags, print_prefix='adding tag')
+                # print_prefix='link_query for tag'
+                print_prefix=None
+                tagged = main_bp.post_tagging([x['link']['id'] for x in target_link_result], tags_to_add=tags, print_prefix=print_prefix)
 
 
 def build_switch_fabric_links_dict(links_dict:dict) -> dict:
@@ -316,7 +318,7 @@ def build_switch_pair_spec(old_generic_system_physical_links, old_generic_system
         "new_systems": None
     }
 
-    with open('./tests/fixtures/switch-system-links-5120.json', 'r') as file:
+    with open('./tests/fixtures/fixture-switch-system-links-5120.json', 'r') as file:
         sample_data = json.load(file)
 
     switch_pair_spec['new_systems'] = sample_data['new_systems']
@@ -327,6 +329,203 @@ def build_switch_pair_spec(old_generic_system_physical_links, old_generic_system
     return switch_pair_spec
 
 
+
+
+def pull_vni_ids(the_bp, switch_label_pair: list) -> list:
+    """
+    Pull the vni ids for the switch pair
+
+    """
+    print(f"== pull_vni_ids() pulling vni ids for {switch_label_pair=}")
+    vn_list_query = f"match(node('system', label=is_in({switch_label_pair})).out().node('vn_instance').out().node('virtual_network', name='vn')).distinct(['vn'])"
+    vn_list = the_bp.query(vn_list_query)
+    vni_list = [ x['vn']['vn_id'] for x in vn_list ]
+    print(f"     = pull_vni_ids() found {len(vni_list)=}")
+    return vni_list
+
+
+def assign_vns(the_bp, vni_list: list, switch_label_pair: list):
+    """
+    Assign VN to the switch pair
+    """
+    print(f"== assign_vns() assigning vni ids for {switch_label_pair=} {vni_list[0]=}")  
+
+    # for vni in vni_list:
+    for vni in [100112, 100121]:
+        # deep copy vn data into vn_spec
+        vn_query = f"node('virtual_network', name='vn', vn_id='{vni}').in_().node('security_zone', name='security_zone')"
+        vn_nodes = the_bp.query(vn_query)
+        vn_spec = vn_nodes[0]['vn'].copy()
+        del vn_spec['type']
+
+        vn_spec['security_zone_id'] = vn_nodes[0]['security_zone']['id']
+        vn_spec['vni_ids'] = [vni]
+
+        #### build svi_ips data
+        svi_ips = []
+        # svi_query = f"node(id='{vn_spec['id']}').out().node('vn_instance', name='vn_instance').out().node('interface', if_type='svi', name='svi')"
+        svi_query = f"""
+            match(
+              node('virtual_network', name='vn', vn_id='{vni}').in_().
+                node('vn_instance', name='vn_instance').in_().
+                node('system', name='system'),
+              node(name='vn_instance').out().node('interface', if_type='svi', name='svi')
+            )
+        """
+        svi_nodes = the_bp.query(svi_query.strip())
+        for svi in svi_nodes:
+            svi_ips.append({
+                'ipv4_addr': svi['svi']['ipv4_addr'], 
+                'ipv6_addr': svi['svi']['ipv6_addr'], 
+                'ipv4_mode': svi['vn_instance']['ipv4_mode'],
+                'ipv6_mode': svi['vn_instance']['ipv6_mode'],
+                'system_id': svi['system']['id']                 
+             })
+        vn_spec['svi_ips'] = svi_ips
+
+        #### build bound_to data
+        bound_to = []
+
+        # TODO: only leaf?
+        rg_query = f"""
+            match(
+                node('redundancy_group', name='redundancy_group').out().
+                    node('system', name='system').out().
+                    node('vn_instance', name='vn_instance').out().
+                    node('virtual_network', vn_id='{vni}'),
+                node(name='system').out().node('rack', name='rack'),
+                node(name='system').out().node('pod', name='pod')
+            )
+        """
+        rg_nodes = the_bp.query(rg_query.strip())
+        # build bound_to data - per redundancy_group
+        # TODO: implement single home leaf - out of scope at the moment
+        # TODO: normalization - separate data for systems
+        for rg in [x for x in rg_nodes if x['system']['role'] in ["leaf"]]:
+            # There are two data per redundancy_group. Need to skip the second one.
+            redundancy_group_id = rg['redundancy_group']['id']
+            if redundancy_group_id in [x['system_id'] for x in bound_to]:
+                continue
+            # boud_to is the list of leaf_pair
+            leaf_pair = {
+                'role': 'leaf_pair',
+                'tags': [],
+                'access-switches': [],
+                'pod-data': {},
+                'system_id': redundancy_group_id,
+                'composed_of': [],
+                'access_siwtch_node_ids': [],
+                'label': rg['redundancy_group']['label'],
+                'vlan_id': rg['vn_instance']['vlan_id'],
+                'redundancy_group_id': None,
+                'rack-data': {},
+                'selected': True,
+            }
+
+            # build pod-data of leaf_pair
+            pod_data = rg['pod'].copy()
+            del pod_data['property_set']
+            del pod_data['pod_type_json']
+            del pod_data['tags']
+            pod_data['description'] = None
+            pod_data['global_catalog_id'] = None
+            pod_id = pod_data['id']
+
+            leaf_pair['pod-data'] = pod_data
+
+            # build rack-data of leaf_pair
+            rack_data = rg['rack'].copy()
+            del rack_data['property_set']
+            del rack_data['ip_version']
+            del rack_data['tags']
+            del rack_data['position']
+            rack_data['description'] = None
+
+            rack_type_json = json.loads(rack_data['rack_type_json'])
+            # pretty_yaml(rack_type_json, "rack_type_json")
+            rack_data['global_catalog_id'] = rack_type_json['id']
+            del rack_data['rack_type_json']
+
+            leaf_pair['rack-data'] = rack_data
+
+            # build composed_of for each leaf system for leaf_pair (a redundancy_group has two leaf systems)
+            leaf_pair_systems = [ x['system'] for x in rg_nodes
+                    if x['redundancy_group']['id'] == redundancy_group_id and x['system']['role'] in ["leaf"] ] 
+            for system in leaf_pair_systems:
+                composed_of = {
+                    'tags': None,
+                    'redundancy_group_id': redundancy_group_id,
+                    'label': system['label'],
+                    'role': 'leaf',
+                    'id': system['id'],
+                    'pod-data': pod_data.copy(),
+                    'rack-data': rack_data.copy()
+                }
+
+                # get tags
+                # print(f"     = assign_vns() getting tags: {system=}")
+                tags_query = f"node(id='{system['id']}').in_().node('tag', name='tag')"
+                # print(f"     = assign_vns() {tags_query=}")
+                tags = [x['tag']['label'] for x in the_bp.query(tags_query)]
+                composed_of['tags'] = tags
+
+                leaf_pair['composed_of'].append(composed_of)
+
+                # # build access-switches for leaf_pair tracing 'leaf_access' link
+                # acess_group_query = f"""
+                #     node('system', role='leaf', name='leaf').out().
+                #     node('interface').out().
+                #     node('link', role='leaf_access').in_().
+                #     node('interface').in_().
+                #     node('system', role='access', name='access').in_().
+                #     node('redundancy_group', name='access_redundancy_group')
+                # """
+                # access_groups = the_bp.query(acess_group_query.strip())
+                # # iterate access groups 
+                # for ag in access_groups:
+                #     access_group_id = ag['access_redundancy_group']['id']
+                #     if access_group_id in [x['id'] for x in bound_to['access-switches']]:
+                #         # skip if already added by other access switch
+                #         continue
+                #     access_switche = {
+                #         'id': access_group_id,
+                #         'role': 'access_pair',
+                #         'tags': [],
+                #         'logical_device': None,
+                #         'loopback': None,
+                #         'superspine_plane_id': None,
+                #         'redundancy_protocol': ag['access_redundancy_group']['rg_type'],
+                #         'interface-map': None,
+                #         'compose-of': []
+                #     }
+
+
+
+
+            bound_to.append(leaf_pair.copy())
+
+            
+
+        vn_spec['bound_to'] = bound_to
+
+
+
+
+
+
+        print(f"     = assign_vns() {vni=}, {vn_spec=}")
+        pretty_yaml(vn_spec, f"vn_spec({vni})")
+
+        # floating_ips: []
+        # route_target: 100112:1
+        # bound_to
+        # dhcp_service": "dhcpServiceDisabled"
+
+
+        # break
+
+
+    pass
 
 
 def pretty_yaml(data: dict, label: str) -> None:
@@ -342,7 +541,7 @@ def main(apstra: str, config: dict):
     access_switch_interface_map_label = config['blueprint']['tor']['new_interface_map']
     
     old_generic_system_label = config['blueprint']['tor']['torname']
-    switch_label_pair = [ f"{old_generic_system_label}a", f"{old_generic_system_label}b"]
+    switch_label_pair = config['blueprint']['tor']['switch_names']
     
     # find the switch side ae information from the old generic system in the main blueprint
     old_generic_system_ae_query = f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='port_channel', name='generic_ae').out().node('link').in_().node(name='switch_ae').where(lambda generic_ae, switch_ae: generic_ae != switch_ae )"
@@ -485,7 +684,8 @@ def main(apstra: str, config: dict):
 
     print(f"=== main: get generic_systems_data. {len(generic_systems_data)=}")
 
-    new_generic_systems(main_bp, generic_systems_data)
+    if False:
+        new_generic_systems(main_bp, generic_systems_data)
 
     # implemented in new_generic_systems
     # update_generic_systems_lag(main_bp, switch_label_pair, generic_systems_data)
@@ -495,10 +695,12 @@ def main(apstra: str, config: dict):
 
     ########
     # assign virtual networks
-    vn_list = tor_bp.query(f"node('system', name='system', role=not_in(['generic'])).out().node('vn_instance').out().node('virtual_network', name='vn')")
-    # print(f"{vn_list=}")
+    vni_list = pull_vni_ids(tor_bp, switch_label_pair)
 
     # assign connectivity templates
+    assign_vns(main_bp, vni_list, switch_label_pair)
+    return
+
 
 
 
@@ -507,6 +709,12 @@ if __name__ == "__main__":
 
     with open('./tests/fixtures/config.yaml', 'r') as file:
         config = yaml.safe_load(file)
-    apstra = CkApstraSession("nf-apstra.pslab.link", 443, "admin", "zaq1@WSXcde3$RFV")
+    apstra_server = config['apstra_server']
+    apstra = CkApstraSession(
+        apstra_server['host'], 
+        apstra_server['port'], 
+        apstra_server['username'],
+        apstra_server['password']
+        )
     main(apstra, config)
 
