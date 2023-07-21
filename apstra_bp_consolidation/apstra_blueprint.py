@@ -67,7 +67,8 @@ class CkApstraBlueprint:
             print(f"== BP.query() {print_prefix}: {query_string}")
         if strip:
             query_candidate = query_string.strip().replace("\n", '')
-            print(f"== BP.query() stripped: {query_candidate}")
+            if print_prefix:
+                print(f"== BP.query() stripped: {query_candidate}")
         url = f"{self.url_prefix}/qe"
         payload = {
             "query": query_candidate
@@ -77,8 +78,9 @@ class CkApstraBlueprint:
         # if response.status_code == 200 and response.raw.read() == b'':
         #     time.sleep(3)
         #     response = self.session.session.post(url, json=payload)
+        # should not check response.raw.read()
         if print_prefix or response.status_code != 200:
-            print (f"== BP.query() {payload=}, {response.status_code=}, {response.raw.read()=}")
+            print (f"== BP.query() {payload=}, {response.status_code=}")
         # the content should have 'items'. otherwise, the query would be invalid
         return response.json()['items']
     
@@ -178,6 +180,19 @@ class CkApstraBlueprint:
         Patch node data
         '''
         return self.session.session.patch(f"{self.url_prefix}/nodes/{node}", json=patch_spec, params=params)
+    
+    def patch_virtual_network(self, patch_spec, params=None):
+        '''
+        Patch virtual network data
+        '''
+        if params is None:
+            params = {
+                'comment': 'virtual-network-details',
+                'async': 'full',
+                'type': 'staging',
+                'svi_requirement': True
+            }
+        return self.session.session.patch(f"{self.url_prefix}/virtual-networks/{patch_spec['id']}", json=patch_spec, params=params)
 
     def post_tagging(self, nodes, tags_to_add = None, tags_to_remove = None, params=None, print_prefix=None):
         '''
