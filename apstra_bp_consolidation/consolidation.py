@@ -353,14 +353,14 @@ def pull_vni_ids(the_bp, switch_label_pair: list) -> list:
     return vni_list
 
 
-def assign_vns(the_bp, vni_list: list, switch_label_pair: list):
+def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
     """
-    Assign VN to the switch pair
+    Assign VN to the access switch pair
     """
-    print(f"== assign_vns() assigning vni ids for {switch_label_pair=} {vni_list[0]=}")  
+    print(f"== access_switch_assign_vns() assigning vni ids for {switch_label_pair=} {vni_list[0]=}")  
 
-    # for vni in vni_list:
-    for vni in [100112, 100121]:
+    for vni in vni_list:
+    # for vni in vni_list[:3]:
         # deep copy vn data into vn_spec
         vn_query = f"node('virtual_network', name='vn', vn_id='{vni}').in_().node('security_zone', name='security_zone')"
         vn_nodes = the_bp.query(vn_query)
@@ -372,23 +372,22 @@ def assign_vns(the_bp, vni_list: list, switch_label_pair: list):
 
         #### build svi_ips data
         svi_ips = []
-        # svi_query = f"node(id='{vn_spec['id']}').out().node('vn_instance', name='vn_instance').out().node('interface', if_type='svi', name='svi')"
+        # TODO: how is svi used?
         svi_query = f"""
             match(
-              node('virtual_network', name='vn', vn_id='{vni}').in_().
-                node('vn_instance', name='vn_instance').in_().
-                node('system', name='system'),
-              node(name='vn_instance').out().node('interface', if_type='svi', name='svi')
+              node('virtual_network', name='vn', vn_id='{vni}')
+                .in_().node('vn_instance', name='vn_instance')
+                .in_().node('system', role='leaf', name='leaf_switch')
             )
         """
         svi_nodes = the_bp.query(svi_query, strip=True)
         for svi in svi_nodes:
             svi_ips.append({
-                'ipv4_addr': svi['svi']['ipv4_addr'], 
-                'ipv6_addr': svi['svi']['ipv6_addr'], 
+                'ipv4_addr': None, 
+                'ipv6_addr': None, 
                 'ipv4_mode': svi['vn_instance']['ipv4_mode'],
                 'ipv6_mode': svi['vn_instance']['ipv6_mode'],
-                'system_id': svi['system']['id']                 
+                'system_id': svi['leaf_switch']['id']                 
              })
         vn_spec['svi_ips'] = svi_ips
 
@@ -483,16 +482,16 @@ def assign_vns(the_bp, vni_list: list, switch_label_pair: list):
                 leaf_pair['composed_of'].append(composed_of)
 
                 # build access-switches for the leaf_pair tracing the links of role'leaf_access'
-                acess_group_query = "node('system', id='1949139a-62be-4366-8f32-4e07ddf9cb5a', name='leaf_switch')"
-                    # node(id=is_in({leaf_pair_system_ids}), name='leaf_switch')
-                        # .out().node('interface')
-                        # .out().node('link', role='leaf_access')
-                        # .in_().node('interface')
-                        # .in_().ode('system', role='access', name='access_switch')
-                        # .in_().node('redundancy_group', name='access_redundancy_group')
-
-                # access_groups = the_bp.query(acess_group_query.strip().replace("\n",'').replace(' ',''), print_prefix="access_groups_query")
-                access_groups = the_bp.query(acess_group_query, print_prefix="access_groups_query")
+                acess_group_query = f"""
+                    node(id=is_in({leaf_pair_system_ids}), name='leaf_switch')
+                        .out().node('interface')
+                        .out().node('link', role='leaf_access')
+                        .in_().node('interface')
+                        .in_().node('system', role='access', name='access_switch')
+                        .in_().node('redundancy_group', name='access_redundancy_group')
+                """
+                access_groups = the_bp.query(acess_group_query, strip=True)
+                # print(f"     =  access_switch_assign_vns() {len(access_groups)=}")
                 if len(access_groups) == 0:
                     # no access switch
                     continue
@@ -500,7 +499,11 @@ def assign_vns(the_bp, vni_list: list, switch_label_pair: list):
                 for ag in access_groups:
                     access_group_id = ag['access_redundancy_group']['id']
                     # there are two data per access group. Need to skip the second one.
-                    if access_group_id in [x['id'] for x in bound_to['access-switches']]:
+                    # print(f"     =  access_switch_assign_vns() {access_group_id=}, {ag=}")
+                    # pretty_yaml(ag, f"access_switch_assign_vns() {access_group_id=}")
+
+                    access_switches = [x['access_switch']['id'] for x in access_groups if x['access_redundancy_group']['id'] == access_group_id]
+                    if access_group_id in [x['id'] for x in leaf_pair['access-switches']]:
                         continue
                     access_switch = {
                         'id': access_group_id,
@@ -511,7 +514,7 @@ def assign_vns(the_bp, vni_list: list, switch_label_pair: list):
                         'superspine_plane_id': None,
                         'redundancy_protocol': ag['access_redundancy_group']['rg_type'],
                         'interface-map': None,
-                        'compose-of': [x['id'] for x in ag['access_switch']],
+                        'composed-of': list(set(access_switches)),
                         'pod_id': pod_id,
                         'position_data': None,
                         'device-profile': None,
@@ -524,7 +527,7 @@ def assign_vns(the_bp, vni_list: list, switch_label_pair: list):
                         'hostname': None,
                         'deploy_mode': None,
                         'port_channel_id_max': None,
-                        'uplinked_system_ids': [x['id'] for x in ag['leaf_switch']],
+                        'uplinked_system_ids': [x['leaf_switch']['id'] for x in access_groups if x['access_redundancy_group']['id'] == access_group_id],
                         'hidden': None,
                         'plane-data': None,
                         'device_profile_id': None,
@@ -551,12 +554,10 @@ def assign_vns(the_bp, vni_list: list, switch_label_pair: list):
 
         vn_spec['bound_to'] = bound_to
 
+        vn_patched = the_bp.patch_virtual_network(vn_spec)
 
 
-
-
-
-        # print(f"     = assign_vns() {vni=}, {vn_spec=}")
+        # print(f"     = access_switch_assign_vns() {vni=}, {vn_spec=}")
         pretty_yaml(vn_spec, f"vn_spec({vni})")
 
         # floating_ips: []
@@ -740,7 +741,7 @@ def main(apstra: str, config: dict):
     vni_list = pull_vni_ids(tor_bp, switch_label_pair)
 
     # assign connectivity templates
-    assign_vns(main_bp, vni_list, switch_label_pair)
+    access_switch_assign_vns(main_bp, vni_list, switch_label_pair)
     return
 
 
