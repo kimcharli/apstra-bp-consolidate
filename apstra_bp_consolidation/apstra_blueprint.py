@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import yaml
+import time
 
 from apstra_bp_consolidation.apstra_session import CkApstraSession
 
@@ -50,24 +51,34 @@ class CkApstraBlueprint:
         """
         print(f"Blueprint ID: {self.id}")
 
-    def query(self, query: str, print_prefix: str = None) -> list:
+    def query(self, query_string: str, print_prefix: str = None, strip: bool = None) -> list:
         """
         Query the Apstra API.
 
         Args:
             query: The query string.
+            strip: Strip the query string. Required in case of multi-line query.
 
         Returns:
             The results of the query.
         """
-        if print_prefix is not None:
-            print(f"== BP.query() {print_prefix}: {query}")
+        query_candidate = query_string
+        if print_prefix:
+            print(f"== BP.query() {print_prefix}: {query_string}")
+        if strip:
+            query_candidate = query_string.strip().replace("\n", '')
+            print(f"== BP.query() stripped: {query_candidate}")
         url = f"{self.url_prefix}/qe"
         payload = {
-            "query": query
+            "query": query_candidate
         }
         response = self.session.session.post(url, json=payload)
-        # print (f"{query=}, {response.json()=}")
+        # There were case of below. Attempted recovery by retrying, but it did not work.
+        # if response.status_code == 200 and response.raw.read() == b'':
+        #     time.sleep(3)
+        #     response = self.session.session.post(url, json=payload)
+        if print_prefix or response.status_code != 200:
+            print (f"== BP.query() {payload=}, {response.status_code=}, {response.raw.read()=}")
         # the content should have 'items'. otherwise, the query would be invalid
         return response.json()['items']
     
@@ -171,6 +182,10 @@ class CkApstraBlueprint:
     def post_tagging(self, nodes, tags_to_add = None, tags_to_remove = None, params=None, print_prefix=None):
         '''
         Update the tagging
+        Args:
+            nodes: The list of nodes to be tagged. Can be links
+            tags_to_add: The list of tags to be added
+            tags_to_remove: The list of tags to be removed
 
         tagging_sepc example
             "add": [ "testtest"],
@@ -186,14 +201,18 @@ class CkApstraBlueprint:
             'remove': [],
             'assigned_to_all': [],
         }
-        if print_prefix is not None:
-            if not tags_to_add and not tags_to_remove:
-                print(f"==== BP.post_tagging(): {print_prefix}: No tags to add or remove")
-                return
+        tag_nodes = self.query(f"node(id=is_in({nodes})).in_().node('tag', label=is_in({tags_to_add}), name='tag')")
+        are_tags_the_same = len(tag_nodes) == (len(tags_to_add) * len(nodes))
+
+        # The tags are the same as the existing tags
+        if are_tags_the_same or (not tags_to_add and not tags_to_remove):
+            if print_prefix:
+                print(f"==== BP.post_tagging() {print_prefix}: No tags to add or remove")
+            return
         tagging_spec['nodes'] = nodes
         tagging_spec['add'] = tags_to_add
         tagging_spec['remove'] = tags_to_remove
-        if print_prefix is not None:
+        if print_prefix:
             print(f"==== BP.post_tagging() {print_prefix}: {nodes=}, {tags_to_add=}, {tags_to_remove=}, {tagging_spec=}")
         return self.session.session.post(f"{self.url_prefix}/tagging", json=tagging_spec, params={'aync': 'full'})
 
