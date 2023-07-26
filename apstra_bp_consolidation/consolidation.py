@@ -2,6 +2,7 @@
 
 import json
 import time
+import copy
 
 from apstra_bp_consolidation.apstra_session import CkApstraSession
 from apstra_bp_consolidation.apstra_blueprint import CkApstraBlueprint
@@ -29,9 +30,26 @@ def pull_generic_system(tor_bp, switch_label_pair: list) -> dict:
     print(f"==== Pulling generic system connected to {switch_label_pair=} of blueprint {tor_bp.label} ====")
     generic_systems_data = {}
     # generic systems data with member interfaces on both sides.
-    generic_systems = tor_bp.query(f"node('system', role='generic', name='generic').out().node('interface', name='gs_intf').out().node('link', name='link').in_().node(name='sw_intf').in_().node('system', label=is_in({switch_label_pair}), name='switch').where(lambda gs_intf, sw_intf: gs_intf != sw_intf)")
+    generic_systems_query = f"""
+        node('system', role='generic', name='generic')
+            .out().node('interface', name='gs_intf')
+            .out().node('link', name='link')
+            .in_().node(name='sw_intf')
+            .in_().node('system', label=is_in({switch_label_pair}), name='switch')
+            .where(lambda gs_intf, sw_intf: gs_intf != sw_intf)
+    """
+    # generic_systems = tor_bp.query(f"node('system', role='generic', name='generic').out().node('interface', name='gs_intf').out().node('link', name='link').in_().node(name='sw_intf').in_().node('system', label=is_in({switch_label_pair}), name='switch').where(lambda gs_intf, sw_intf: gs_intf != sw_intf)")
+    generic_systems = tor_bp.query(generic_systems_query, multiline=True)
     # aggregate links to associate them to the member interfaces
-    aggregate_links = tor_bp.query(f"match(node('link', link_type='aggregate_link', name='aggregate_link').in_().node().out().node(name='member_interface').out().node('link', name='member_link').in_().node().in_().node('system', label=is_in({switch_label_pair})),node(name='aggregate_link').in_().node('interface').in_().node('system', name='system'))")
+    aggregate_links_query = f"""
+        match(node('link', link_type='aggregate_link', name='aggregate_link')
+            .in_().node().out().node(name='member_interface')
+            .out().node('link', name='member_link')
+            .in_().node().in_().node('system', label=is_in({switch_label_pair})),node(name='aggregate_link')
+            .in_().node('interface').in_().node('system', name='system'))
+    """
+    # aggregate_links = tor_bp.query(f"match(node('link', link_type='aggregate_link', name='aggregate_link').in_().node().out().node(name='member_interface').out().node('link', name='member_link').in_().node().in_().node('system', label=is_in({switch_label_pair})),node(name='aggregate_link').in_().node('interface').in_().node('system', name='system'))")
+    aggregate_links = tor_bp.query(aggregate_links_query, multiline=True)
     for gs in generic_systems:
         # TODO: generalize upglinks processing
         # most QFX5120 has port 48 and 49 as uplinks
@@ -58,7 +76,16 @@ def pull_generic_system(tor_bp, switch_label_pair: list) -> dict:
         generic_systems_data[al['system']['label']][al['member_link']['id']]['aggregate_link'] = al['aggregate_link']['id']
     # retrieve the tags information
     # link_tags = tor_bp.query("node('system', role='generic', name='generic_system').out().node('interface').out().node('link', link_type='ethernet', name='link').in_().node('tag', name='tag')")
-    link_tags = tor_bp.query(f"match(node('tag', name='tag').out().node('link', name='member_link').in_().node('interface').in_().node('system', label=is_in({switch_label_pair}), name='switch'), node('system', role='generic', name='generic_system').out().node('interface').out().node('link', name='member_link'))")
+    link_tags_query = f"""
+        match(node('tag', name='tag')
+            .out().node('link', name='member_link')
+            .in_().node('interface')
+            .in_().node('system', label=is_in({switch_label_pair}), name='switch'), 
+            node('system', role='generic', name='generic_system')
+                .out().node('interface')
+                .out().node('link', name='member_link'))
+    """
+    link_tags = tor_bp.query(link_tags_query, multiline=True)
     for tag in link_tags:
         generic_system_label = tag['generic_system']['label']
         member_link_id = tag['member_link']['id']
@@ -214,10 +241,16 @@ def update_generic_systems_lag(main_bp, switch_label_pair, tor_generic_systems_d
                 'links': {}
             }
             for old_link_data in old_lag_data:
-                link_query = f"node('system', label='{tor_generic_label}').out().node('interface').out().node('link', name='link').in_().node('interface', if_name='{old_link_data['sw_if_name']}').in_().node('system', label='{old_link_data['sw_label']}')"
+                link_query = f"""
+                    node('system', label='{tor_generic_label}')
+                        .out().node('interface')
+                        .out().node('link', name='link')
+                        .in_().node('interface', if_name='{old_link_data['sw_if_name']}')
+                        .in_().node('system', label='{old_link_data['sw_label']}')
+                """
                 # print_prefix='link_query for lag'
                 print_prefix=None
-                link_data = main_bp.query(link_query, print_prefix=print_prefix)
+                link_data = main_bp.query(link_query, print_prefix=print_prefix, split=True)
                 if len(link_data) != 1:
                     print(f"     = update_generic_systems_lag() Wrong link_data for query: {link_query=}")
                 # skip if the link is already in the correct group_label
@@ -275,7 +308,7 @@ def update_generic_systems_link_tag(main_bp, tor_generic_systems_data):
                     .in_().node('interface', if_name='{old_link_data['sw_if_name']}')
                     .in_().node('system', label='{old_link_data['sw_label']}')
             """
-            target_link_result = main_bp.query(link_query, strip=True)
+            target_link_result = main_bp.query(link_query, multiline=True)
             # print_prefix='link_query for tag'
             print_prefix=None
             tagged = main_bp.post_tagging([x['link']['id'] for x in target_link_result], tags_to_add=tags, print_prefix=print_prefix)
@@ -346,7 +379,12 @@ def pull_vni_ids(the_bp, switch_label_pair: list) -> list:
 
     """
     print(f"== pull_vni_ids() pulling vni ids for {switch_label_pair=}")
-    vn_list_query = f"match(node('system', label=is_in({switch_label_pair})).out().node('vn_instance').out().node('virtual_network', name='vn')).distinct(['vn'])"
+    vn_list_query = f"""
+        match(
+            node('system', label=is_in({switch_label_pair}))
+            .out().node('vn_instance')
+            .out().node('virtual_network', name='vn')
+        ).distinct(['vn'])"""
     vn_list = the_bp.query(vn_list_query)
     vni_list = [ x['vn']['vn_id'] for x in vn_list ]
     print(f"     = pull_vni_ids() found {len(vni_list)=}")
@@ -380,7 +418,7 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
                 .in_().node('system', role='leaf', name='leaf_switch')
             )
         """
-        svi_nodes = the_bp.query(svi_query, strip=True)
+        svi_nodes = the_bp.query(svi_query, multiline=True)
         for svi in svi_nodes:
             svi_ips.append({
                 'ipv4_addr': None, 
@@ -405,7 +443,7 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
                 node(name='system').out().node('pod', name='pod')
             )
         """
-        rg_nodes = the_bp.query(rg_query, strip=True)
+        rg_nodes = the_bp.query(rg_query, multiline=True)
         # build bound_to data - per redundancy_group
         # TODO: implement single home leaf - out of scope at the moment
         # TODO: normalization - separate data for systems
@@ -490,7 +528,7 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
                         .in_().node('system', role='access', name='access_switch')
                         .in_().node('redundancy_group', name='access_redundancy_group')
                 """
-                access_groups = the_bp.query(acess_group_query, strip=True)
+                access_groups = the_bp.query(acess_group_query, multiline=True)
                 # print(f"     =  access_switch_assign_vns() {len(access_groups)=}")
                 if len(access_groups) == 0:
                     # no access switch
@@ -557,18 +595,171 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
         vn_patched = the_bp.patch_virtual_network(vn_spec)
 
 
-        # print(f"     = access_switch_assign_vns() {vni=}, {vn_spec=}")
-        pretty_yaml(vn_spec, f"vn_spec({vni})")
+        print(f"     = access_switch_assign_vns() assigning {vni=}")
+        # pretty_yaml(vn_spec, f"vn_spec({vni})")
 
-        # floating_ips: []
-        # route_target: 100112:1
-        # dhcp_service": "dhcpServiceDisabled"
+        # TODO: floating_ips: []
+        # TODO: route_target: 100112:1
+        # TODO: dhcp_service": "dhcpServiceDisabled"
 
 
         # break
 
 
     pass
+
+
+
+def pull_single_vlan_cts(the_bp, switch_label_pair: list) -> dict:
+    """
+    Pull the single vlan cts for the switch pair
+
+    The return data
+    <system_label>:
+        <if_name>:
+            tagged_vlans: []
+            untagged_vlan: None
+    redundacy_group:
+      <ae_id>:
+        tagged_vlans: []
+        untagged_vlan: None
+        member_interfaces:
+          <system_label>: [ <member if_name> ]   
+    """
+    ct_table = {
+        # atl1tor-r5r14a:
+        #   xe-0/0/0:
+        #     tagged_vlans: []
+        #     untagged_vlan: None
+        'redundancy_group': {}
+    }
+
+    # pull the non-ae interfaces
+    ethernet_interface_query = f"""
+        node('system', system_type='switch', label=is_in({switch_label_pair}), name='switch')
+            .out().node('interface', if_type='ethernet', name='switch_interface')
+            .out().node('ep_group', name='ep_group')
+            .in_().node('ep_application_instance', name='ep_application_instance')
+            .out().node('ep_endpoint_policy', policy_type_name='AttachSingleVLAN', name='ep_endpoint_policy')
+            .out().node('virtual_network', name='virtual_network')
+            .out().node('vn_instance', name='vn_instance')
+    """
+    ethernet_interface_nodes = the_bp.query(ethernet_interface_query, multiline=True)
+    for node in ethernet_interface_nodes:
+        switch_label = node['switch']['label']
+        if_name = node['switch_interface']['if_name']
+        vlan_id = node['vn_instance']['vlan_id']
+        if switch_label not in ct_table:
+            ct_table[switch_label] = {}
+        if if_name not in ct_table[switch_label]:
+            ct_table[switch_label][if_name] = {
+                'tagged_vlans': [],
+                'untagged_vlan': None
+            }
+        if 'untagged' in node['ep_endpoint_policy']['attributes']:
+            ct_table[switch_label][if_name]['untagged_vlan'] = vlan_id
+        else:
+            ct_table[switch_label][if_name]['tagged_vlans'].append(vlan_id)
+
+
+    # process ae interfaces in two stages. combined query used to time out
+    ae_interface_query = f"""
+        node('system', system_type='switch', label=is_in({switch_label_pair}), name='switch')
+            .out().node('redundancy_group')
+            .out().node('interface', if_type='port_channel', name='switch_interface')
+            .out().node('interface', name='ae')
+            .out().node('interface', name='member_interface')
+            .in_().node('system', name='member_switch')
+    """
+    ae_interface_nodes = the_bp.query(ae_interface_query, multiline=True)
+    for ae in ae_interface_nodes:
+        ae_id = ae['switch_interface']['id']
+        if ae_id not in ct_table['redundancy_group']:
+            ct_table['redundancy_group'][ae_id] = {
+                'tagged_vlans': [],
+                'untagged_vlan': None,
+                'member_interfaces': {}
+            }
+        member_switch_label = ae['member_switch']['label']
+        member_if_name = ae['member_interface']['if_name']
+        if member_switch_label not in ct_table['redundancy_group'][ae_id]['member_interfaces']:
+            ct_table['redundancy_group'][ae_id]['member_interfaces'][member_switch_label] = [ member_if_name ]
+        elif member_if_name not in ct_table['redundancy_group'][ae_id]['member_interfaces'][member_switch_label]:
+            ct_table['redundancy_group'][ae_id]['member_interfaces'][member_switch_label].append(member_if_name)
+        print(f"     = pull_single_vlan_cts() BP:{the_bp.label} {ae_id=}, ae={ae['ae']['if_name']}, {member_switch_label=}, {member_if_name=}")
+
+        ae_ct_query = f"""
+            node(id='{ae_id}')
+                .out().node('ep_group', name='ep_group')
+                .in_().node('ep_application_instance', name='ep_application_instance')
+                .out().node('ep_endpoint_policy', policy_type_name='AttachSingleVLAN', name='ep_endpoint_policy')
+                .out().node('virtual_network', name='virtual_network')
+                .out().node('vn_instance', name='vn_instance')
+        """
+        ae_ct_nodes = the_bp.query(ae_ct_query, multiline=True)
+
+        for ae_ct_node in ae_ct_nodes:
+            vlan_id = ae_ct_node['vn_instance']['vlan_id']
+            if 'untagged' in ae_ct_node['ep_endpoint_policy']['attributes']:
+                ct_table['redundancy_group'][ae_id]['untagged_vlan'] = vlan_id
+            elif vlan_id not in ct_table['redundancy_group'][ae_id]['tagged_vlans']:
+                ct_table['redundancy_group'][ae_id]['tagged_vlans'].append(vlan_id)
+
+    # TODO: remove empty ae
+    # aes = copy.copy(ct_table['redundancy_group'].keys())
+    # print(f"     = pull_single_vlan_cts() {type(aes)=}")
+    # for key in aes:
+    #     ae = ct_table['redundancy_group'][key]
+    #     try:
+    #         if len(ae['tagged_vlans']) == 0 and ae['untagged_vlan'] is None:
+    #             del ct_table['redundancy_group'][key]
+    #     except TypeError:
+    #         print(f"     = TypeError: pull_single_vlan_cts() {ae=} {ct_table['redundancy_group']=}")
+    #         raise
+    # print(f"== pull_single_vlan_cts() pulling single vlan cts for {switch_label_pair=}")
+    # pretty_yaml(ct_table, "ct_table")
+    return ct_table
+
+def associate_missing_cts(the_bp, tor_ct, main_ct: list):
+    print(f"== associate_missing_cts() associating missing cts, {len(tor_ct['redundancy_group'])=}, {len(main_ct['redundancy_group'])=}")
+    for system_label, system_data in tor_ct.items():
+        if system_label not in main_ct:
+            print(f"     = associate_missing_cts() adding: {system_label=}")
+            main_ct[system_label] = {}
+            #     'tagged_vlans': [],
+            #     'untagged_vlan': None
+            # }
+        for if_name, if_data in system_data.items():
+            # lag interface
+            if system_label == 'redundancy_group':
+                pass
+            # non-lag interface
+            else:
+                if if_name not in main_ct[system_label]:
+                    print(f"     = associate_missing_cts() adding: {system_label=}, {if_name=}")
+                    main_ct[system_label][if_name] = {
+                        'tagged_vlans': [],
+                        'untagged_vlan': None
+                    }
+                tagged_vlans = [x for x in if_data['tagged_vlans'] if x not in main_ct[system_label][if_name]['tagged_vlans']]
+                untagged_vlan = if_data['untagged_vlan']
+                if untagged_vlan or len(tagged_vlans):
+                    print(f"     = associate_missing_cts() {system_label=}, {if_name=}, {tagged_vlans=}, {untagged_vlan=}")
+                    application_point = the_bp.query(f"node('system', label='{system_label}').out().node('interface', if_name='{if_name}', name='interface')")[0]['interface']['id']
+                    (_, untagged_id) = the_bp.get_single_vlan_ct_id(100000+untagged_vlan)
+                    attach_spec = {
+                        'application_points': [{
+                            'id': application_point,
+                            'policies': [{
+                                'policy': untagged_id,
+                                'used': True
+                            }]
+                        }]
+                    }
+                    print(f"     = associate_missing_cts() {attach_spec=}")
+                    the_bp.patch_obj_policy_batch_apply(attach_spec, params={'aync': 'full'})
+
+
 
 
 def pretty_yaml(data: dict, label: str) -> None:
@@ -586,9 +777,22 @@ def main(apstra: str, config: dict):
     old_generic_system_label = config['blueprint']['tor']['torname']
     switch_label_pair = config['blueprint']['tor']['switch_names']
     
+
+    # tor_cts = pull_single_vlan_cts(tor_bp, switch_label_pair)
+    # main_cts = pull_single_vlan_cts(main_bp, switch_label_pair)
+    # associate_missing_cts(main_bp, tor_cts, main_cts)
+    # return 
+
     # find the switch side ae information from the old generic system in the main blueprint
-    old_generic_system_ae_query = f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='port_channel', name='generic_ae').out().node('link').in_().node(name='switch_ae').where(lambda generic_ae, switch_ae: generic_ae != switch_ae )"
-    old_generic_system_ae_list = main_bp.query(old_generic_system_ae_query, print_prefix="main: old_generic_system_ae_query")
+    old_generic_system_ae_query = f"""
+        node('system', label='{old_generic_system_label}')
+            .out().node('interface', if_type='port_channel', name='generic_ae')
+            .out().node('link')
+            .in_().node(name='switch_ae')
+            .where(lambda generic_ae, switch_ae: generic_ae != switch_ae )
+    """
+    # old_generic_system_ae_query = f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='port_channel', name='generic_ae').out().node('link').in_().node(name='switch_ae').where(lambda generic_ae, switch_ae: generic_ae != switch_ae )"
+    old_generic_system_ae_list = main_bp.query(old_generic_system_ae_query, print_prefix="main: old_generic_system_ae_query", multiline=True)
     # the generic system should exist in main blueprint
     if len(old_generic_system_ae_list):
         old_generic_system_ae_id = old_generic_system_ae_list[0]['switch_ae']['id']
@@ -723,11 +927,12 @@ def main(apstra: str, config: dict):
     ########
     # create new generic systems
     # generic system data: generic_system_label.link.dict
+    # TODO: make unique for the generic system label
     generic_systems_data = pull_generic_system(tor_bp, switch_label_pair)
 
     print(f"=== main: get generic_systems_data. {len(generic_systems_data)=}")
 
-    if False:
+    if True:
         new_generic_systems(main_bp, generic_systems_data)
 
     # implemented in new_generic_systems
@@ -742,6 +947,21 @@ def main(apstra: str, config: dict):
 
     # assign connectivity templates
     access_switch_assign_vns(main_bp, vni_list, switch_label_pair)
+
+    ########
+    # pull CT assignment data
+
+    # q1
+    # f"node('ep_endpoint_policy', name='ep', label='{ct_label}').out('ep_subpolicy').node().out('ep_first_subpolicy').node(name='n2')"
+    # vn_endpoint_query = f"node('system', label='{system_label}').out('hosted_vn_instances').node('vn_instance').out('instantiates').node('virtual_network', label='{vn_label}').out('member_endpoints').node('vn_endpoint', name='vn_endpoint')"
+    # get_ae_or_interface_id(ct_dict['system'], ct_dict['interface'])
+    # node('virtual_network', name='virtual_network').out().node('vn_endpoint', name='vn_endpoint').in_().node('interface', name='interface').in_().node('system', name='system')
+
+    tor_cts = pull_single_vlan_cts(tor_bp, switch_label_pair)
+    main_cts = pull_single_vlan_cts(main_bp, switch_label_pair)
+    associate_missing_cts(main_bp, tor_cts, main_cts)
+
+
     return
 
 

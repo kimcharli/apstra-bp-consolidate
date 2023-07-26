@@ -224,6 +224,18 @@ blueprint:
     torname: atl1tor-r5r14
     switch_names: [ atl1tor-r5r14a, atl1tor-r5r14b ]
     new_interface_map: _ATL-AS-5120-48T
+    # generic_systems:
+    #   <generic_system_label>:
+    #     <link_id>:
+    #         gs_if_name: None
+    #         sw_if_name: xe-0/0/15
+    #         sw_label: atl1tor-r5r14a
+    #         speed: 10G
+    #         aggregate_link: <aggregate_link_id>
+    #         tags: []
+    #         tagged_vlan: []
+    #         untagged_vlan: 
+
 apstra_server:
   host: nf-apstra.pslab.link
   port: 443

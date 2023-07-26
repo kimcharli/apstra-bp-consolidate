@@ -51,7 +51,7 @@ class CkApstraBlueprint:
         """
         print(f"Blueprint ID: {self.id}")
 
-    def query(self, query_string: str, print_prefix: str = None, strip: bool = None) -> list:
+    def query(self, query_string: str, print_prefix: str = None, multiline = False) -> list:
         """
         Query the Apstra API.
 
@@ -62,13 +62,11 @@ class CkApstraBlueprint:
         Returns:
             The results of the query.
         """
-        query_candidate = query_string
+        query_candidate = query_string.strip()        
+        if multiline:
+            query_candidate = query_candidate.replace("\n", '')
         if print_prefix:
             print(f"== BP.query() {print_prefix}: {query_string}")
-        if strip:
-            query_candidate = query_string.strip().replace("\n", '')
-            if print_prefix:
-                print(f"== BP.query() stripped: {query_candidate}")
         url = f"{self.url_prefix}/qe"
         payload = {
             "query": query_candidate
@@ -103,6 +101,22 @@ class CkApstraBlueprint:
                 return None            
             self.system_id_cache[system_label] = { 'id': system_query_result[0]['system']['id'] }
         return self.system_id_cache[system_label]['id']
+
+    def get_single_vlan_ct_id(self, vn_id: int):
+        '''
+        Get the single VLAN CT ID
+
+        Return tuple of (tagged CT id, untagged CT id)
+        '''
+        ct_list_spec = f"node('virtual_network', vn_id='{vn_id}', name='virtual_network').in_().node('ep_endpoint_policy', name='ep_endpoint_policy').in_('ep_first_subpolicy').node().in_('ep_subpolicy').node('ep_endpoint_policy', name='ct')"
+        ct_list = self.query(ct_list_spec)
+        tagged_nodes = [x for x in ct_list if 'vlan_tagged' in x['ep_endpoint_policy']['attributes']]
+        tagged_ct = len(tagged_nodes) and tagged_nodes[0]['ct']['id'] or None
+        # tagged_ct = [x['id'] for x in ct_list if x and 'vlan_tagged' in x['ep_endpoint_policy']['attributes']][0] or None
+        untagged_nodes = [x for x in ct_list if 'untagged' in x['ep_endpoint_policy']['attributes']]
+        untagged_ct = len(untagged_nodes) and untagged_nodes[0]['ct']['id'] or None
+        # untagged_ct = [x['id'] for x in ct_list if x and 'untagged' in x['ep_endpoint_policy']['attributes']][0] or None
+        return (tagged_ct, untagged_ct)
 
     def add_generic_system(self, gs_spec: dict) -> list:
         """
