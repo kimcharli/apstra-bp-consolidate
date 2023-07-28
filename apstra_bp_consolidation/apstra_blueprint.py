@@ -26,7 +26,8 @@ class CkApstraBlueprint:
         self.get_id()
         self.url_prefix = f"{self.session.url_prefix}/blueprints/{self.id}"
 
-        self.system_id_cache = {} # { system_label: { id: id, interface_map_id: id, device_profile_id: id }
+        self.system_label_2_id_cache = {} # { system_label: { id: id, interface_map_id: id, device_profile_id: id }
+        self.system_id_2_label_cache = {} # { system_label: { id: id, interface_map_id: id, device_profile_id: id }
 
     def get_id(self) -> str:
         """
@@ -85,22 +86,32 @@ class CkApstraBlueprint:
     # return the first entry for the system
     def get_system_with_im(self, system_label):
         system_im = self.query(f"node('system', label='{system_label}', name='system').out().node('interface_map', name='im')")[0]
-        if system_label not in self.system_id_cache:
-            self.system_id_cache[system_label] = system_im['system']['id']
-            if  'interface_map_id' not in self.system_id_cache[system_label]:
-                self.system_id_cache[system_label]['interface_map_id'] = system_im['im']['id']
-                self.system_id_cache[system_label]['device_profile_id'] = system_im['im']['device_profile_id']
+        if system_label not in self.system_label_2_id_cache:
+            self.system_label_2_id_cache[system_label] = system_im['system']['id']
+            self.system_id_2_label_cache[system_im['system']['id']] = system_label
+            if  'interface_map_id' not in self.system_label_2_id_cache[system_label]:
+                self.system_label_2_id_cache[system_label]['interface_map_id'] = system_im['im']['id']
+                self.system_label_2_id_cache[system_label]['device_profile_id'] = system_im['im']['device_profile_id']
         return system_im
 
     def get_system_id(self, system_label):
         # cache the id of the system_label if not already cached
-        if system_label not in self.system_id_cache:
+        if system_label not in self.system_label_2_id_cache:
             system_query_result = self.query(f"node('system', label='{system_label}', name='system')")
             # skip if the system does not exist
             if len(system_query_result) == 0:
                 return None            
-            self.system_id_cache[system_label] = { 'id': system_query_result[0]['system']['id'] }
-        return self.system_id_cache[system_label]['id']
+            self.system_label_2_id_cache[system_label] = { 'id': system_query_result[0]['system']['id'] }
+            self.system_id_2_label_cache[system_query_result[0]['system']['id']] = system_label
+        return self.system_label_2_id_cache[system_label]['id']
+
+    def get_system_label(self, system_id):
+        '''
+        Get the system label from the system id
+        '''
+        if system_id not in self.system_id_2_label_cache:
+            return None
+        return self.system_id_2_label_cache[system_id]
 
     def get_single_vlan_ct_id(self, vn_id: int):
         '''
@@ -195,7 +206,7 @@ class CkApstraBlueprint:
         '''
         return self.session.session.patch(f"{self.url_prefix}/nodes/{node}", json=patch_spec, params=params)
     
-    def patch_virtual_network(self, patch_spec, params=None):
+    def patch_virtual_network(self, patch_spec, params=None, svi_requirement=False):
         '''
         Patch virtual network data
         '''
@@ -204,7 +215,7 @@ class CkApstraBlueprint:
                 'comment': 'virtual-network-details',
                 'async': 'full',
                 'type': 'staging',
-                'svi_requirement': True
+                'svi_requirements': 'true'
             }
         return self.session.session.patch(f"{self.url_prefix}/virtual-networks/{patch_spec['id']}", json=patch_spec, params=params)
 
@@ -252,12 +263,23 @@ class CkApstraBlueprint:
         url = f"{self.url_prefix}/batch"
         self.session.session.post(url, json=batch_spec, params=params)
 
-    def cts_single_ae_generic_system(self, gs_label) -> list:
+    def get_cts_on_generic_system_with_only_ae(self, generic_system_label) -> list:
         '''
         Get the CTS of generic system with single AE
         '''
-        ct_list_spec = f"match(node('system', label='{gs_label}').out().node('interface', if_type='port_channel', name='ae2').out().node('link').in_().node(name='ae1').out().node('ep_group').in_().node('ep_application_instance').out().node('ep_endpoint_policy', policy_type_name='batch', name='batch').where(lambda ae1, ae2: ae1 != ae2 )).distinct(['batch'])"
-        ct_list = [ x['batch']['id'] for x in self.query(ct_list_spec) ]
+        ct_list_spec = f"""
+            match(
+                node('system', label='{generic_system_label}', system_type='server')
+                    .out().node('interface', if_type='port_channel', name='gs_ae')
+                    .out().node('link')
+                    .in_().node(name='switch_ae')
+                    .out().node('ep_group')
+                    .in_().node('ep_application_instance')
+                    .out().node('ep_endpoint_policy', policy_type_name='batch', name='batch')
+                .where(lambda switch_ae, gs_ae: switch_ae != gs_ae )
+            ).distinct(['batch'])
+        """
+        ct_list = [ x['batch']['id'] for x in self.query(ct_list_spec, multiline=True) ]
         return ct_list
 
     def revert(self):
