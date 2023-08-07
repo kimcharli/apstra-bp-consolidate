@@ -3,9 +3,44 @@
 import json
 import time
 import copy
+import yaml
+from datetime import datetime
+import logging
 
 from apstra_bp_consolidation.apstra_session import CkApstraSession
 from apstra_bp_consolidation.apstra_blueprint import CkApstraBlueprint
+
+
+class CustomFormatter(logging.Formatter):
+    grey = "\x1b[38;20m"
+    yellow = "\x1b[33;20m"
+    red = "\x1b[31;20m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+    format = "%(asctime)s %(levelname)8s %(name)s:%(funcName)s() - %(message)s (%(filename)s:%(lineno)d)"
+    FORMATS = {
+        logging.DEBUG: grey + format + reset,
+        logging.INFO: grey + format + reset,
+        logging.WARNING: yellow + format + reset,
+        logging.ERROR: red + format + reset,
+        logging.CRITICAL: bold_red + format + reset
+    }
+
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
+
+def prep_logging(log_level=logging.INFO):
+    '''Configure logging options'''
+    timestamp = datetime.now().strftime("%Y%m%d-%H:%H:%S")
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    ch = logging.StreamHandler()
+    ch.setLevel(log_level)
+    ch.setFormatter(CustomFormatter())
+    root.addHandler(ch)
 
 
 class ConsolidationOrder:
@@ -37,8 +72,25 @@ class ConsolidationOrder:
         self.old_generic_system_label = self.config['blueprint']['tor']['torname']
         self.switch_label_pair = self.config['blueprint']['tor']['switch_names']
 
+        self.logger = logging.getLogger('ConsolidationOrder')
+
     def __repr__(self) -> str:
         return f"ConsolidationOrder({self.yaml_in_file=}, {self.config=}, {self.session=}, {self.main_bp=}, {self.tor_bp=}, {self.old_generic_system_label=}, {self.switch_label_pair=})"
+    
+    def rename_generic_system(self, generec_system_from_tor_bp: str) -> str:
+        # rename the generic system in the main blueprint to avoid conflict
+        # the maximum length is 32. Prefix 'r5r14-'
+        # TODO: remove pattern like: '_atl_rack_1_000'
+        prefix = self.old_generic_system_label[:len('atl1tor-')]
+        max_len = 32
+        if ( len(generec_system_from_tor_bp) + len(prefix) ) > max_len:
+            # TODO: potential of conflict
+            self.logger.warning(f"Generic system name {generec_system_from_tor_bp=} is too long. Keeping original label.")
+            return generec_system_from_tor_bp
+        return f"{self.old_generic_system_label[len('atl1tor-'):]}-{generec_system_from_tor_bp}"
+
+
+
 
 # def build_switch_fabric_links_dict(links_dict:dict) -> dict:
 #     '''
@@ -108,6 +160,8 @@ def pretty_yaml(data: dict, label: str) -> None:
 def main(yaml_in_file: str):
     # pretty_yaml(config, "config")
     order = ConsolidationOrder(yaml_in_file)
+    log_level = logging.INFO
+    prep_logging(log_level)
 
     ########
     # prepare the data with initial validation    

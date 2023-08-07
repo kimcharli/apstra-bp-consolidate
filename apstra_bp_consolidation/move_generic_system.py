@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import json
+import logging
 
 from apstra_session import CkApstraSession
 from apstra_blueprint import CkApstraBlueprint
+from consolidation import prep_logging
 
 
 def pull_generic_system_off_switch(the_bp, switch_label_pair: list) -> dict:
@@ -96,7 +98,7 @@ def pull_generic_system_off_switch(the_bp, switch_label_pair: list) -> dict:
     return generic_systems_data
 
 # generic system data: generic_system_label.link.dict
-def new_generic_systems(main_bp, generic_system_data:dict) -> dict:
+def new_generic_systems(order, generic_system_data:dict) -> dict:
     """
     Create new generic systems in the main blueprint based on the generic systems in the TOR blueprint. 
         <generic_system_label>:
@@ -110,6 +112,7 @@ def new_generic_systems(main_bp, generic_system_data:dict) -> dict:
 
     """
     # to cache the system id of the systems includin leaf
+    main_bp = order.main_bp
     print(f"==== new_generic_systems() Creating new generic systems in {main_bp.label}: {len(generic_system_data)} ====")
     system_id_cache = {}
 
@@ -144,7 +147,7 @@ def new_generic_systems(main_bp, generic_system_data:dict) -> dict:
             generic_system_spec['links'].append(link_spec)
         new_system = {
             'system_type': 'server',
-            'label': generic_system_label,
+            'label': order.rename_generic_system(generic_system_label),
             'hostname': None, # hostname should not have '_' in it
             'port_channel_id_min': 0,
             'port_channel_id_max': 0,
@@ -317,6 +320,10 @@ def main(yaml_in_file):
     from consolidation import ConsolidationOrder
     order = ConsolidationOrder(yaml_in_file)
 
+    log_level = logging.INFO
+    prep_logging(log_level)
+
+
     ########
     # create new generic systems
     # generic system data: generic_system_label.link.dict
@@ -325,7 +332,7 @@ def main(yaml_in_file):
 
     print(f"=== main: get generic_systems_data. {len(generic_systems_data)=}")
 
-    new_generic_systems(order.main_bp, generic_systems_data)
+    new_generic_systems(order, generic_systems_data)
 
     # implemented in new_generic_systems
     # update_generic_systems_lag(main_bp, switch_label_pair, generic_systems_data)
