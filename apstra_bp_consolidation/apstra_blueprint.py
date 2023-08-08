@@ -2,9 +2,11 @@
 
 import yaml
 import time
+import logging
 
-from apstra_bp_consolidation.apstra_session import CkApstraSession
 
+from apstra_session import CkApstraSession
+from apstra_session import prep_logging
 
 def pretty_yaml(data: dict, label: str) -> None:
     print(f"==== {label}\n{yaml.dump(data)}\n====")
@@ -25,6 +27,7 @@ class CkApstraBlueprint:
         self.id = None
         self.get_id()
         self.url_prefix = f"{self.session.url_prefix}/blueprints/{self.id}"
+        self.logger = logging.getLogger(f"CkApstraBlueprint({label})")
 
         self.system_label_2_id_cache = {} # { system_label: { id: id, interface_map_id: id, device_profile_id: id }
         self.system_id_2_label_cache = {} # { system_label: { id: id, interface_map_id: id, device_profile_id: id }
@@ -46,13 +49,13 @@ class CkApstraBlueprint:
             raise ValueError(f"Blueprint '{self.label}' not found.")
         return self.id
 
-    def print_id(self) -> None:
-        """
-        Print the ID of the blueprint.
-        """
-        print(f"Blueprint ID: {self.id}")
+    # def get_id(self) -> None:
+    #     """
+    #     Print the ID of the blueprint.
+    #     """
+    #     return self.id
 
-    def query(self, query_string: str, print_prefix: str = None, multiline = False) -> list:
+    def query(self, query_string: str, print_prefix: str = None, multiline: bool = False) -> list:
         """
         Query the Apstra API.
 
@@ -67,7 +70,7 @@ class CkApstraBlueprint:
         if multiline:
             query_candidate = query_candidate.replace("\n", '')
         if print_prefix:
-            print(f"== BP.query() {print_prefix}: {query_string}")
+            self.logger.info(f"{print_prefix}: {query_string}")
         url = f"{self.url_prefix}/qe"
         payload = {
             "query": query_candidate
@@ -79,8 +82,10 @@ class CkApstraBlueprint:
         #     response = self.session.session.post(url, json=payload)
         # should not check response.raw.read()
         if print_prefix or response.status_code != 200:
-            print (f"== BP.query() {payload=}, {response.status_code=}")
+            self.logger.warning(f"status_code != 200: {payload=}, {response.status_code=}, response.text={response.text}")
         # the content should have 'items'. otherwise, the query would be invalid
+        elif 'items' not in response.json():
+            self.logger.warning(f"items does not exist: {query_string=}, {response.text=}")
         return response.json()['items']
     
     # return the first entry for the system
@@ -184,21 +189,21 @@ class CkApstraBlueprint:
             link_spec: The specification of the leaf-server link.
         """
         url = f"{self.url_prefix}/leaf-server-link-labels"
-        self.session.session.patch(url, json=link_spec)
+        self.session.patch_throttled(url, spec=link_spec)
 
     def patch_obj_policy_batch_apply(self, policy_spec, params=None):
         '''
         Apply policies in a batch
         '''
-        return self.session.session.patch(f"{self.url_prefix}/obj-policy-batch-apply", json=policy_spec, params=params)
+        return self.session.patch_throttled(f"{self.url_prefix}/obj-policy-batch-apply", spec=policy_spec, params=params)
 
     def patch_leaf_server_link_labels(self, spec, params=None, print_prefix=None):
         '''
         Update the generic system links
         '''
         if print_prefix:
-            print(f"==== BP.patch_leaf_server_link_labels() {print_prefix}: {spec=}")
-        return self.session.session.patch(f"{self.url_prefix}/leaf-server-link-labels", json=spec, params=params)
+            self.logger.info(f"{print_prefix}: {spec=}")
+        return self.session.spatch_throttled(f"{self.url_prefix}/leaf-server-link-labels", spec=spec, params=params)
 
     def patch_node(self, node, patch_spec, params=None):
         '''
@@ -217,7 +222,8 @@ class CkApstraBlueprint:
                 'type': 'staging',
                 'svi_requirements': 'true'
             }
-        return self.session.session.patch(f"{self.url_prefix}/virtual-networks/{patch_spec['id']}", json=patch_spec, params=params)
+        patched = self.session.patch_throttled(f"{self.url_prefix}/virtual-networks/{patch_spec['id']}", spec=patch_spec, params=params)
+        return patched
 
     def post_tagging(self, nodes, tags_to_add = None, tags_to_remove = None, params=None, print_prefix=None):
         '''
@@ -247,13 +253,13 @@ class CkApstraBlueprint:
         # The tags are the same as the existing tags
         if are_tags_the_same or (not tags_to_add and not tags_to_remove):
             if print_prefix:
-                print(f"==== BP.post_tagging() {print_prefix}: No tags to add or remove")
+                self.logger.info(f"{print_prefix}: No tags to add or remove")
             return
         tagging_spec['nodes'] = nodes
         tagging_spec['add'] = tags_to_add
         tagging_spec['remove'] = tags_to_remove
         if print_prefix:
-            print(f"==== BP.post_tagging() {print_prefix}: {nodes=}, {tags_to_add=}, {tags_to_remove=}, {tagging_spec=}")
+            self.logger.info(f"{print_prefix}: {nodes=}, {tags_to_add=}, {tags_to_remove=}, {tagging_spec=}")
         return self.session.session.post(f"{self.url_prefix}/tagging", json=tagging_spec, params={'aync': 'full'})
 
     def batch(self, batch_spec: dict, params=None) -> None:
@@ -288,11 +294,13 @@ class CkApstraBlueprint:
         '''
         url = f"{self.url_prefix}/revert"
         revert_result = self.session.session.post(url, json="", params={"aync": "full"})
-        print(f"Revert result: {revert_result.json()}")
+        self.logger.info(f"Revert result: {revert_result.json()}")
 
 
 if __name__ == "__main__":
+    log_level = logging.DEBUG
+    prep_logging(log_level)
     apstra = CkApstraSession("10.85.192.50", 443, "admin", "zaq1@WSXcde3$RFV")
     bp = CkApstraBlueprint(apstra, "pslab")
-    bp.print_id()
+    print(bp.get_id())
 

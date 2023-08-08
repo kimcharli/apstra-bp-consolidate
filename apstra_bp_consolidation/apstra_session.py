@@ -1,6 +1,41 @@
 #!/usr/bin/env python3
 import requests
 import urllib3
+import logging
+import time
+from datetime import datetime
+
+class CustomFormatter(logging.Formatter):
+    grey = "\x1b[38;20m"
+    yellow = "\x1b[33;20m"
+    red = "\x1b[31;20m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+    format = "%(asctime)s %(levelname)8s %(name)s:%(funcName)s() - %(message)s (%(filename)s:%(lineno)d)"
+    FORMATS = {
+        logging.DEBUG: grey + format + reset,
+        logging.INFO: grey + format + reset,
+        logging.WARNING: yellow + format + reset,
+        logging.ERROR: red + format + reset,
+        logging.CRITICAL: bold_red + format + reset
+    }
+
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
+
+def prep_logging(log_level=logging.INFO):
+    '''Configure logging options'''
+    timestamp = datetime.now().strftime("%Y%m%d-%H:%H:%S")
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    ch = logging.StreamHandler()
+    ch.setLevel(log_level)
+    ch.setFormatter(CustomFormatter())
+    root.addHandler(ch)
+
 
 # https client session to Apstra Controller
 class CkApstraSession:
@@ -12,6 +47,7 @@ class CkApstraSession:
         self.password = password
         self.token = None
         self.ssl_verify = False
+        self.logger = logging.getLogger('CkApstraSession')
 
         self.session = requests.Session()
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -48,7 +84,7 @@ class CkApstraSession:
             The device profile, or None if the device profile does not exist.
         """
         if device_profile_name is None:
-            print("get_device_profile: name is None")
+            self.logger.warning("name is None")
             return None
         if device_profile_name not in self.device_profile_cache:
             url = f"{self.url_prefix}/device-profiles"
@@ -94,18 +130,31 @@ class CkApstraSession:
             The return
         """
         url = f"{self.url_prefix}/{url}"
-        print(f"patch_item({url}, {spec})")
+        self.logger.debug(f"patch_item({url}, {spec})")
         return self.session.patch(url, json=spec).json()
 
-
+    def patch_throttled(self, url: str, spec: dict, params: None) -> dict:
+        """
+        """
+        patched = self.session.patch(url, json=spec, params=params)
+        while True:
+            # http 429 too many requests
+            if patched.status_code != 429:                
+                break
+            self.logger.info(patched.text)
+            time.sleep(3)
+            patched = patched = self.session.patch(url, json=spec, params=params)
+        return patched.json()
 
     def print_token(self) -> None:
         """
         Print the current authentication token.
         """
-        print(f"{self.token=}")
+        self.logger.info(f"{self.token=}")
 
 
 if __name__ == "__main__":
+    log_level = logging.DEBUG
+    prep_logging(log_level)
     apstra = CkApstraSession("10.85.192.50", 443, "admin", "zaq1@WSXcde3$RFV")
     apstra.print_token()

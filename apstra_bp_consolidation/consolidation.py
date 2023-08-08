@@ -9,38 +9,8 @@ import logging
 
 from apstra_bp_consolidation.apstra_session import CkApstraSession
 from apstra_bp_consolidation.apstra_blueprint import CkApstraBlueprint
+from apstra_bp_consolidation.apstra_session import prep_logging
 
-
-class CustomFormatter(logging.Formatter):
-    grey = "\x1b[38;20m"
-    yellow = "\x1b[33;20m"
-    red = "\x1b[31;20m"
-    bold_red = "\x1b[31;1m"
-    reset = "\x1b[0m"
-    format = "%(asctime)s %(levelname)8s %(name)s:%(funcName)s() - %(message)s (%(filename)s:%(lineno)d)"
-    FORMATS = {
-        logging.DEBUG: grey + format + reset,
-        logging.INFO: grey + format + reset,
-        logging.WARNING: yellow + format + reset,
-        logging.ERROR: red + format + reset,
-        logging.CRITICAL: bold_red + format + reset
-    }
-
-    def format(self, record):
-        log_fmt = self.FORMATS.get(record.levelno)
-        formatter = logging.Formatter(log_fmt)
-        return formatter.format(record)
-
-def prep_logging(log_level=logging.INFO):
-    '''Configure logging options'''
-    timestamp = datetime.now().strftime("%Y%m%d-%H:%H:%S")
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
-
-    ch = logging.StreamHandler()
-    ch.setLevel(log_level)
-    ch.setFormatter(CustomFormatter())
-    root.addHandler(ch)
 
 
 class ConsolidationOrder:
@@ -68,12 +38,13 @@ class ConsolidationOrder:
         self.main_bp = CkApstraBlueprint(self.session, self.config['blueprint']['main']['name'])
         self.tor_bp = CkApstraBlueprint(self.session, self.config['blueprint']['tor']['name'])
         access_switch_interface_map_label = self.config['blueprint']['tor']['new_interface_map']
-        
+        self.logger = logging.getLogger(f"ConsolidationOrder({self.main_bp.label}<-{self.tor_bp.label})")
+
         self.old_generic_system_label = self.config['blueprint']['tor']['torname']
         self.switch_label_pair = self.config['blueprint']['tor']['switch_names']
+        self.logger.debug(f"{self.main_bp.id=}, {self.tor_bp.id=}")
 
-        self.logger = logging.getLogger('ConsolidationOrder')
-
+ 
     def __repr__(self) -> str:
         return f"ConsolidationOrder({self.yaml_in_file=}, {self.config=}, {self.session=}, {self.main_bp=}, {self.tor_bp=}, {self.old_generic_system_label=}, {self.switch_label_pair=})"
     
@@ -91,78 +62,55 @@ class ConsolidationOrder:
 
 
 
-
-# def build_switch_fabric_links_dict(links_dict:dict) -> dict:
-#     '''
-#     Build "links" data from the links query
-#     It is assumed that the interface names are in et-0/0/48-b format
-#     '''
-#     # print(f"==== build_switch_fabric_links_dict() {len(links_dict)=}, {links_dict=}")
-#     link_candidate = {
-#             "lag_mode": "lacp_active",
-#             "system_peer": None,
-#             "switch": {
-#                 "system_id": links_dict['leaf']['id'],
-#                 "transformation_id": 2,
-#                 "if_name": links_dict['leaf_intf']['if_name']
-#             },
-#             "system": {
-#                 "system_id": None,
-#                 "transformation_id": 1,
-#                 "if_name": None
-#             }
-#         }
-#     original_intf_name = links_dict['gs_intf']['if_name']
-#     if original_intf_name in ['et-0/0/48-a', 'et-0/0/48a']:
-#         link_candidate['system_peer'] = 'first'
-#         link_candidate['system']['if_name'] = 'et-0/0/48'
-#     elif original_intf_name in ['et-0/0/48-b', 'et-0/0/48b']:
-#         link_candidate['system_peer'] = 'second'
-#         link_candidate['system']['if_name'] = 'et-0/0/48'
-#     elif original_intf_name in ['et-0/0/49-a', 'et-0/0/49a']:
-#         link_candidate['system_peer'] = 'first'
-#         link_candidate['system']['if_name'] = 'et-0/0/49'
-#     elif original_intf_name in ['et-0/0/49-b', 'et-0/0/49b']:
-#         link_candidate['system_peer'] = 'second'
-#         link_candidate['system']['if_name'] = 'et-0/0/49'
-#     else:
-#         return None
-#     return link_candidate
-
-# #     # old_generic_system_physical_links has a list of dict with generic, gs_intf, link, leaf_intf, and leaf 
-# def build_switch_pair_spec(old_generic_system_physical_links, old_generic_system_label) -> dict:
-#     # print(f"==== build_switch_pair_spec() with {len(old_generic_system_physical_links)=}, {old_generic_system_label}")
-#     # print(f"===== build_switch_pair_spec() {old_generic_system_physical_links[0]=}")
-#     switch_pair_spec = {
-#         "links": [build_switch_fabric_links_dict(x) for x in old_generic_system_physical_links],
-#         "new_systems": None
-#     }
-
-#     with open('./tests/fixtures/fixture-switch-system-links-5120.json', 'r') as file:
-#         sample_data = json.load(file)
-
-#     switch_pair_spec['new_systems'] = sample_data['new_systems']
-#     switch_pair_spec['new_systems'][0]['label'] = old_generic_system_label
-
-#     # del switch_pair_spec['new_systems']
-#     print(f"====== build_switch_pair_spec() from {len(old_generic_system_physical_links)=}")
-#     return switch_pair_spec
-
-
-
-
-
-
-
 def pretty_yaml(data: dict, label: str) -> None:
     print(f"==== {label}\n{yaml.dump(data)}\n====")
+
+
+def deep_compare(dict1: dict, dict2: dict) -> dict:
+    # print the differences between two dictionaries
+    # return the differences
+    my_logger = logging.getLogger()
+
+    diffs = {
+        'only_in_dict1_XXXXX': [],
+        'only_in_dict2_XXXXX': [],
+    }
+
+    if type(dict1) != type(dict2):
+        my_logger.error(f"Type mismatch: {type(dict1)=}, {type(dict2)=}")
+        return diffs
+    if type(dict1) == dict:
+        for key, value in dict1.items():
+            if key not in dict2:
+                diffs[key] = value
+                diffs['only_in_dict1_XXXXX'].append(key)
+                continue
+            if value != dict2[key]:
+                child = deep_compare(value, dict2[key])
+                if len(child) > 0:
+                    diffs[key] = deep_compare(value, dict2[key])
+        for key, value in dict2.items():
+            if key not in dict1:
+                diffs[key] = value
+                diffs['only_in_dict2_XXXXX'].append(key)
+    if type(dict1) == list:
+        for item in dict1:
+            if item not in dict2:
+                diffs['only_in_dict1_XXXXX'].append(item)
+        for item in dict2:
+            if item not in dict1:
+                diffs['only_in_dict2_XXXXX'].append(item)
+    if len(diffs['only_in_dict1_XXXXX']) == 0:
+        del(diffs['only_in_dict1_XXXXX'])
+    if len(diffs['only_in_dict2_XXXXX']) == 0:
+        del(diffs['only_in_dict2_XXXXX'])
+    return diffs
+
 
 def main(yaml_in_file: str):
     # pretty_yaml(config, "config")
     order = ConsolidationOrder(yaml_in_file)
-    log_level = logging.INFO
-    prep_logging(log_level)
-
+ 
     ########
     # prepare the data with initial validation    
     # main_bp = CkApstraBlueprint(apstra, config['blueprint']['main']['name'])
@@ -380,6 +328,8 @@ def main(yaml_in_file: str):
 
 
 if __name__ == "__main__":
+    log_level = logging.INFO
+    prep_logging(log_level)
     main('./tests/fixtures/config.yaml')
     # with open('./tests/fixtures/config.yaml', 'r') as file:
     #     config = yaml.safe_load(file)
