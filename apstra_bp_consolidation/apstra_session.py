@@ -136,13 +136,14 @@ class CkApstraSession:
     def patch_throttled(self, url: str, spec: dict, params: None) -> dict:
         """
         """
+        throttle_seconds = 5
         patched = self.session.patch(url, json=spec, params=params)
         while True:
             # http 429 too many requests
             if patched.status_code != 429:                
                 break
-            self.logger.info(patched.text)
-            time.sleep(3)
+            self.logger.info(f"sleeping {throttle_seconds} due to: {patched.text}")
+            time.sleep(throttle_seconds)
             patched = patched = self.session.patch(url, json=spec, params=params)
         return patched.json()
 

@@ -153,6 +153,9 @@ class CkApstraBlueprint:
             return []
         url = f"{self.url_prefix}/switch-system-links"
         created_generic_system = self.session.session.post(url, json=gs_spec)
+        if created_generic_system.status_code >= 400:
+            self.logger.error(f"System not created: {created_generic_system=}, {created_generic_system.status_code=}, {created_generic_system.text=}")
+            return []
         if created_generic_system is None or len(created_generic_system.json()) == 0 or 'ids' not in created_generic_system.json():
             # print(f"add_generic_system(): System not created: {created_generic_system=} for {gs_spec=}")
             # pretty_yaml(gs_spec, "failed spec()")
@@ -210,6 +213,18 @@ class CkApstraBlueprint:
         Patch node data
         '''
         return self.session.session.patch(f"{self.url_prefix}/nodes/{node}", json=patch_spec, params=params)
+    
+
+    def get_virtual_network(self, vni):
+        '''
+        Get virtual network data from vni
+        '''
+        vn_id_got = self.query(f"node('virtual_network', vn_id='{vni}', name='vn')")
+        if len(vn_id_got) == 0:
+            self.logger.warning(f"{vni=} not found")
+            return 
+        vn_id = vn_id_got[0]['vn']['id']
+        return self.session.get_items(f"blueprints/{self.id}/virtual-networks/{vn_id}")
     
     def patch_virtual_network(self, patch_spec, params=None, svi_requirement=False):
         '''

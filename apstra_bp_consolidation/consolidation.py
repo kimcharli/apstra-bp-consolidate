@@ -291,7 +291,7 @@ def main(yaml_in_file: str):
     # implemented in new_generic_systems
     # update_generic_systems_lag(main_bp, switch_label_pair, generic_systems_data)
 
-    update_generic_systems_link_tag(main_bp, generic_systems_data)
+    update_generic_systems_link_tag(order.main_bp, generic_systems_data)
 
 
 
@@ -301,10 +301,9 @@ def main(yaml_in_file: str):
     from move_vn import pull_vni_ids
     from move_vn import access_switch_assign_vns
 
-    vni_list = pull_vni_ids(tor_bp, switch_label_pair)
+    vni_list = pull_vni_ids(order.tor_bp, order.switch_label_pair)
+    access_switch_assign_vns(order.main_bp, vni_list, order.switch_label_pair)
 
-    # assign connectivity templates
-    access_switch_assign_vns(main_bp, vni_list, switch_label_pair)
 
     ########
     # pull CT assignment data
@@ -317,9 +316,9 @@ def main(yaml_in_file: str):
 
     from move_ct import pull_single_vlan_cts, associate_missing_cts
 
-    tor_cts = pull_single_vlan_cts(tor_bp, switch_label_pair)
-    main_cts = pull_single_vlan_cts(main_bp, switch_label_pair)
-    associate_missing_cts(main_bp, tor_cts, main_cts)
+    tor_cts = pull_single_vlan_cts(order.tor_bp, order.switch_label_pair)
+    main_cts = pull_single_vlan_cts(order.main_bp, order.switch_label_pair)
+    associate_missing_cts(order.main_bp, tor_cts, main_cts)
 
 
     return
