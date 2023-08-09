@@ -117,7 +117,7 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
     system_id_cache = {}
 
     for generic_system_label, generic_system_data in generic_system_data.items():
-        if main_bp.get_system_id(generic_system_label):
+        if main_bp.get_system_from_label(generic_system_label):
             # this generic system already exists
             print(f"     = new_generic_systems() skipping: {generic_system_label} already exists in the main blueprint")
             continue
@@ -133,7 +133,7 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
                     'system_id': None
                 },
                 'switch': {
-                    'system_id': main_bp.get_system_id(link_data['sw_label']),
+                    'system_id': main_bp.get_system_from_label(link_data['sw_label'])['id'],
                     'transformation_id': main_bp.get_transformation_id(link_data['sw_label'], link_data['sw_if_name'] , link_data['speed']),
                     'if_name': link_data['sw_if_name'],
                 }                

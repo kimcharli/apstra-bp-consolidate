@@ -321,8 +321,11 @@ def main(yaml_in_file: str):
     associate_missing_cts(order.main_bp, tor_cts, main_cts)
 
 
-    return
+    ########
+    # move devices from tor bp to main bp
+    from move_device import move_device
 
+    move_device(order)
 
 
 

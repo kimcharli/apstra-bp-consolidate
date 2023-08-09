@@ -99,16 +99,26 @@ class CkApstraBlueprint:
                 self.system_label_2_id_cache[system_label]['device_profile_id'] = system_im['im']['device_profile_id']
         return system_im
 
-    def get_system_id(self, system_label):
+    def get_system_from_label(self, system_label) -> dict:
+        """
+        Return the system dict from the system label
+        """
         # cache the id of the system_label if not already cached
         if system_label not in self.system_label_2_id_cache:
             system_query_result = self.query(f"node('system', label='{system_label}', name='system')")
             # skip if the system does not exist
             if len(system_query_result) == 0:
                 return None            
-            self.system_label_2_id_cache[system_label] = { 'id': system_query_result[0]['system']['id'] }
-            self.system_id_2_label_cache[system_query_result[0]['system']['id']] = system_label
-        return self.system_label_2_id_cache[system_label]['id']
+            id = system_query_result[0]['system']['id']
+            sn = system_query_result[0]['system']['system_id']
+            deploy_mode = system_query_result[0]['system']['deploy_mode']
+            self.system_label_2_id_cache[system_label] = { 
+                'id': id,
+                'sn': sn,
+                'deploy_mode': deploy_mode
+                }
+            self.system_id_2_label_cache[id] = system_label
+        return self.system_label_2_id_cache[system_label]
 
     def get_system_label(self, system_id):
         '''
@@ -208,12 +218,19 @@ class CkApstraBlueprint:
             self.logger.info(f"{print_prefix}: {spec=}")
         return self.session.spatch_throttled(f"{self.url_prefix}/leaf-server-link-labels", spec=spec, params=params)
 
-    def patch_node(self, node, patch_spec, params=None):
+    def patch_node_single(self, node, patch_spec, params=None):
         '''
         Patch node data
         '''
         return self.session.session.patch(f"{self.url_prefix}/nodes/{node}", json=patch_spec, params=params)
-    
+
+    def patch_nodes(self, patch_spec, params=None):
+        '''
+        Patch node data with patch_spec list
+        '''
+        params_to_use = params or {'async': 'full'}
+        return self.session.session.patch(f"{self.url_prefix}/nodes", json=patch_spec, params=params_to_use)
+
 
     def get_virtual_network(self, vni):
         '''

@@ -219,7 +219,7 @@ def create_new_access_switch_pair(order, switch_pair_spec):
         time.sleep(3)
     # The first entry is the peer link
     # rename redundancy group
-    order.main_bp.patch_node(new_systems[0]['redundancy_group']['id'], {"label": f"{order.old_generic_system_label}-pair" })
+    order.main_bp.patch_node_single(new_systems[0]['redundancy_group']['id'], {"label": f"{order.old_generic_system_label}-pair" })
     # rename each access switch for the label and hostname
     for leaf in new_systems:
         given_label = leaf['leaf']['label']
@@ -229,7 +229,7 @@ def create_new_access_switch_pair(order, switch_pair_spec):
             new_label = f"{order.old_generic_system_label}b"
         else:
             raise Exception(f"During renaming leaf names: Unexpected leaf label {given_label}")
-        order.main_bp.patch_node(leaf['leaf']['id'], {"label": new_label, "hostname": new_label })
+        order.main_bp.patch_node_single(leaf['leaf']['id'], {"label": new_label, "hostname": new_label })
 
 
 def main(yaml_in_file):
