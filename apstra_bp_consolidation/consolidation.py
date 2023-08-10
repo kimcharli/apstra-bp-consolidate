@@ -3,11 +3,11 @@
 import json
 import time
 import copy
-import yaml
+# import yaml
 from datetime import datetime
 import logging
 
-from apstra_bp_consolidation.apstra_session import CkApstraSession
+from apstra_session import CkApstraSession
 from apstra_bp_consolidation.apstra_blueprint import CkApstraBlueprint
 from apstra_bp_consolidation.apstra_session import prep_logging
 

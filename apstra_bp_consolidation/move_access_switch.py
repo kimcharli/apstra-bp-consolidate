@@ -2,34 +2,32 @@
 
 import json
 import time
+import logging
 
-from apstra_session import CkApstraSession
-from apstra_blueprint import CkApstraBlueprint
-from move_generic_system import pull_generic_system_off_switch
+# from move_generic_system import pull_generic_system_off_switch
+from consolidation import ConsolidationOrder
+from consolidation import prep_logging
 
-
-
-
-def get_old_generic_system_ae_id(order) -> str:
-    '''
-    get generic system id for the tor blueprint from the main blueprint
-    '''
-    # find the switch side ae information from the old generic system in the main blueprint
-    old_generic_system_ae_query = f"""
-        node('system', label='{order.old_generic_system_label}')
-            .out().node('interface', if_type='port_channel', name='generic_ae')
-            .out().node('link')
-            .in_().node(name='switch_ae')
-            .where(lambda generic_ae, switch_ae: generic_ae != switch_ae )
-    """
-    # old_generic_system_ae_query = f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='port_channel', name='generic_ae').out().node('link').in_().node(name='switch_ae').where(lambda generic_ae, switch_ae: generic_ae != switch_ae )"
-    old_generic_system_ae_list = order.main_bp.query(old_generic_system_ae_query, print_prefix="get_old_generic_system_ae_id(): old_generic_system_ae_query", multiline=True)
-    # the generic system should exist in main blueprint
-    if len(old_generic_system_ae_list):
-        old_generic_system_ae_id = old_generic_system_ae_list[0]['switch_ae']['id']
-        print(f"== Order::get_old_generic_system_ae_id: {old_generic_system_ae_id =}")
-        return old_generic_system_ae_id
-    return None
+# def get_old_generic_system_ae_id(order) -> str:
+#     '''
+#     get generic system id for the tor blueprint from the main blueprint
+#     '''
+#     # find the switch side ae information from the old generic system in the main blueprint
+#     old_generic_system_ae_query = f"""
+#         node('system', label='{order.old_generic_system_label}')
+#             .out().node('interface', if_type='port_channel', name='generic_ae')
+#             .out().node('link')
+#             .in_().node(name='switch_ae')
+#             .where(lambda generic_ae, switch_ae: generic_ae != switch_ae )
+#     """
+#     # old_generic_system_ae_query = f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='port_channel', name='generic_ae').out().node('link').in_().node(name='switch_ae').where(lambda generic_ae, switch_ae: generic_ae != switch_ae )"
+#     old_generic_system_ae_list = order.main_bp.query(old_generic_system_ae_query, print_prefix="get_old_generic_system_ae_id(): old_generic_system_ae_query", multiline=True)
+#     # the generic system should exist in main blueprint
+#     if len(old_generic_system_ae_list):
+#         old_generic_system_ae_id = old_generic_system_ae_list[0]['switch_ae']['id']
+#         print(f"== Order::get_old_generic_system_ae_id: {old_generic_system_ae_id =}")
+#         return old_generic_system_ae_id
+#     return None
 
 def build_switch_fabric_links_dict(links_dict:dict) -> dict:
     '''
@@ -92,11 +90,22 @@ def build_switch_pair_spec(old_generic_system_physical_links, old_generic_system
     return switch_pair_spec
 
 
-def remove_old_generic_system(order):
-    old_generic_system_ae_id = get_old_generic_system_ae_id(order)
-    if old_generic_system_ae_id is None:
-        print(f"== remove_old_generic_system: {order.old_generic_system_label} not found")
+def remove_old_generic_system_from_main(order):
+    """
+    Remove the old generic system from the main blueprint
+    """
+    tor_name = order.config['blueprint']['tor']['torname']
+    old_generic_system_ae_id = None
+
+    tor_interfaces = order.main_bp.get_interfaces_of_generic_system(tor_name)
+    if len(tor_interfaces) == 0:
+        logging.warning(f"{tor_name}  does not exist in main blueprint")
         return
+    if 'ae' not in tor_interfaces[0]:
+        logging.warning(f"{tor_name}  does not have AE in main blueprint")
+        return
+    old_generic_system_ae_id = tor_interfaces[0]['ae']['id']
+    # logging.warning(f"{old_generic_system_ae_id=}")
 
     cts_to_remove = order.main_bp.get_cts_on_generic_system_with_only_ae(order.old_generic_system_label)
 
@@ -116,9 +125,9 @@ def remove_old_generic_system(order):
     switch_pair_spec = build_switch_pair_spec(old_generic_system_physical_links, order.old_generic_system_label)
     print(f"== remove_old_generic_system: {switch_pair_spec['links']=}")
 
-    # TODO: Not used?
-    pull_generic_system_data = pull_generic_system_off_switch(order.tor_bp, order.switch_label_pair)
-    # pretty_yaml(pull_generic_system_data, "pull_generic_system_data")
+    # # TODO: Not used?
+    # pull_generic_system_data = pull_generic_system_off_switch(order.tor_bp, order.switch_label_pair)
+    # # pretty_yaml(pull_generic_system_data, "pull_generic_system_data")
 
 
 
@@ -233,7 +242,6 @@ def create_new_access_switch_pair(order, switch_pair_spec):
 
 
 def main(yaml_in_file):
-    from consolidation import ConsolidationOrder
     order = ConsolidationOrder(yaml_in_file)
 
     # find the switch side ae information from the old generic system in the main blueprint
@@ -242,11 +250,13 @@ def main(yaml_in_file):
 
     cts = order.main_bp.get_cts_on_generic_system_with_only_ae(order.old_generic_system_label)
 
-    switch_pair_spec = remove_old_generic_system(order)
+    switch_pair_spec = remove_old_generic_system_from_main(order)
 
     create_new_access_switch_pair(order, switch_pair_spec)
 
 if __name__ == '__main__':
+    log_level = logging.DEBUG
+    prep_logging(log_level)
     main('./tests/fixtures/config.yaml')    
 
 

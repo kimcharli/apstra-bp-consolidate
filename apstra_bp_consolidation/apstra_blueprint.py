@@ -128,6 +128,31 @@ class CkApstraBlueprint:
             return None
         return self.system_id_2_label_cache[system_id]
 
+    def get_interfaces_of_generic_system(self, system_label, intf_name=None) -> str:
+        """
+        Return interfaces from the system label
+            return 'member', optionally 'ae' if it is a LAG
+            It can be used for VLAN CT association
+            TODO: implement intf_name in case of multiple link generic system
+        TODO: cache generic system interface id
+        """
+        interface_query = f"""
+            match(
+                node('system', label='{system_label}')
+                    .out().node('interface')
+                    .out().node('link')
+                    .in_().node('interface', name='member')
+                    .in_().node('system', system_type='switch'),
+                optional(
+                    node('interface', po_control_protocol='evpn', name='ae')
+                        .out().node('interface')
+                        .out().node(name='member')
+                )
+            )
+        """
+        return self.query(interface_query, multiline=True)
+
+
     def get_single_vlan_ct_id(self, vn_id: int):
         '''
         Get the single VLAN CT ID

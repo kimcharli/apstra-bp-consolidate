@@ -3,9 +3,8 @@
 import json
 import logging
 
-from apstra_session import CkApstraSession
-from apstra_blueprint import CkApstraBlueprint
 from consolidation import prep_logging
+from consolidation import ConsolidationOrder
 
 
 def pull_generic_system_off_switch(the_bp, switch_label_pair: list) -> dict:
@@ -317,7 +316,6 @@ def update_generic_systems_link_tag(main_bp, tor_generic_systems_data):
 
 
 def main(yaml_in_file):
-    from consolidation import ConsolidationOrder
     order = ConsolidationOrder(yaml_in_file)
 
     log_level = logging.INFO

@@ -3,11 +3,8 @@
 import json
 import logging
 
-from apstra_session import CkApstraSession
-from apstra_blueprint import CkApstraBlueprint
 from consolidation import prep_logging
-from consolidation import deep_compare
-from consolidation import pretty_yaml
+from consolidation import ConsolidationOrder
 
 # keeping here to use later
 def deep_diff(dict1, dict2, path=""):
@@ -140,7 +137,6 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
     my_logger.info(f"{switch_label_pair=} {total_vni=}, {total_updated=}, {total_skipped=}, {total_leaf_missing=}")
 
 def main(yaml_in_file):
-    from consolidation import ConsolidationOrder
     order = ConsolidationOrder(yaml_in_file)
 
     ########
