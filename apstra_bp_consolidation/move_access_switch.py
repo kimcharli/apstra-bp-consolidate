@@ -4,77 +4,52 @@ import json
 import time
 import logging
 
-# from move_generic_system import pull_generic_system_off_switch
 from consolidation import ConsolidationOrder
 from consolidation import prep_logging
 
-# def get_old_generic_system_ae_id(order) -> str:
-#     '''
-#     get generic system id for the tor blueprint from the main blueprint
-#     '''
-#     # find the switch side ae information from the old generic system in the main blueprint
-#     old_generic_system_ae_query = f"""
-#         node('system', label='{order.old_generic_system_label}')
-#             .out().node('interface', if_type='port_channel', name='generic_ae')
-#             .out().node('link')
-#             .in_().node(name='switch_ae')
-#             .where(lambda generic_ae, switch_ae: generic_ae != switch_ae )
-#     """
-#     # old_generic_system_ae_query = f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='port_channel', name='generic_ae').out().node('link').in_().node(name='switch_ae').where(lambda generic_ae, switch_ae: generic_ae != switch_ae )"
-#     old_generic_system_ae_list = order.main_bp.query(old_generic_system_ae_query, print_prefix="get_old_generic_system_ae_id(): old_generic_system_ae_query", multiline=True)
-#     # the generic system should exist in main blueprint
-#     if len(old_generic_system_ae_list):
-#         old_generic_system_ae_id = old_generic_system_ae_list[0]['switch_ae']['id']
-#         print(f"== Order::get_old_generic_system_ae_id: {old_generic_system_ae_id =}")
-#         return old_generic_system_ae_id
-#     return None
 
-def build_switch_fabric_links_dict(links_dict:dict) -> dict:
+def build_access_switch_fabric_links_dict(links_dict:dict) -> dict:
     '''
-    Build "links" data from the links query
+    Build each "links" data from tor_interface_nodes_in_main
     It is assumed that the interface names are in et-0/0/48-b format
     '''
-    # print(f"==== build_switch_fabric_links_dict() {len(links_dict)=}, {links_dict=}")
+    # logging.debug(f"{len(links_dict)=}, {links_dict=}")
+
+    translation_table = {
+        "et-0/0/48-a": { 'system_peer': 'first', 'system_if_name': 'et-0/0/48' },
+        "et-0/0/48-b": { 'system_peer': 'second', 'system_if_name': 'et-0/0/48' },
+        "et-0/0/49-a": { 'system_peer': 'first', 'system_if_name': 'et-0/0/49' },
+        "et-0/0/49-b": { 'system_peer': 'second', 'system_if_name': 'et-0/0/49' },
+
+        "et-0/0/48a": { 'system_peer': 'first', 'system_if_name': 'et-0/0/48' },
+        "et-0/0/48b": { 'system_peer': 'second', 'system_if_name': 'et-0/0/48' },
+        "et-0/0/49a": { 'system_peer': 'first', 'system_if_name': 'et-0/0/49' },
+        "et-0/0/49b": { 'system_peer': 'second', 'system_if_name': 'et-0/0/49' },
+    }
+
+    tor_intf_name = links_dict['gs_intf']['if_name']
     link_candidate = {
             "lag_mode": "lacp_active",
-            "system_peer": None,
+            "system_peer": translation_table[tor_intf_name]['system_peer'],
             "switch": {
                 "system_id": links_dict['switch']['id'],
                 "transformation_id": 2,
-                "if_name": links_dict['leaf_intf']['if_name']
+                "if_name": links_dict['member']['if_name']
             },
             "system": {
                 "system_id": None,
                 "transformation_id": 1,
-                "if_name": None
+                "if_name": translation_table[tor_intf_name]['system_if_name']
             }
         }
-    original_intf_name = links_dict['gs_intf']['if_name']
-    if original_intf_name in ['et-0/0/48-a', 'et-0/0/48a']:
-        link_candidate['system_peer'] = 'first'
-        link_candidate['system']['if_name'] = 'et-0/0/48'
-    elif original_intf_name in ['et-0/0/48-b', 'et-0/0/48b']:
-        link_candidate['system_peer'] = 'second'
-        link_candidate['system']['if_name'] = 'et-0/0/48'
-    elif original_intf_name in ['et-0/0/49-a', 'et-0/0/49a']:
-        link_candidate['system_peer'] = 'first'
-        link_candidate['system']['if_name'] = 'et-0/0/49'
-    elif original_intf_name in ['et-0/0/49-b', 'et-0/0/49b']:
-        link_candidate['system_peer'] = 'second'
-        link_candidate['system']['if_name'] = 'et-0/0/49'
-    else:
-        return None
     return link_candidate
 
-#     # old_generic_system_physical_links has a list of dict with generic, gs_intf, link, leaf_intf, and leaf 
-def build_switch_pair_spec(old_generic_system_physical_links, old_generic_system_label) -> dict:
+def build_switch_pair_spec(tor_interface_nodes_in_main, tor_label) -> dict:
     '''
     Build the switch pair spec from the links query
     '''
-    # print(f"==== build_switch_pair_spec() with {len(old_generic_system_physical_links)=}, {old_generic_system_label}")
-    # print(f"===== build_switch_pair_spec() {old_generic_system_physical_links[0]=}")
     switch_pair_spec = {
-        "links": [build_switch_fabric_links_dict(x) for x in old_generic_system_physical_links],
+        "links": [build_access_switch_fabric_links_dict(x) for x in tor_interface_nodes_in_main],
         "new_systems": None
     }
 
@@ -83,120 +58,67 @@ def build_switch_pair_spec(old_generic_system_physical_links, old_generic_system
         sample_data = json.load(file)
 
     switch_pair_spec['new_systems'] = sample_data['new_systems']
-    switch_pair_spec['new_systems'][0]['label'] = old_generic_system_label
+    switch_pair_spec['new_systems'][0]['label'] = tor_label
 
-    # del switch_pair_spec['new_systems']
-    print(f"====== build_switch_pair_spec() from {len(old_generic_system_physical_links)=}")
     return switch_pair_spec
 
 
-def remove_old_generic_system_from_main(order):
+def remove_old_generic_system_from_main(order, tor_ae_id_in_main, tor_interface_nodes_in_main):
     """
     Remove the old generic system from the main blueprint
     """
-    tor_name = order.config['blueprint']['tor']['torname']
-    old_generic_system_ae_id = None
-
-    tor_interfaces = order.main_bp.get_interfaces_of_generic_system(tor_name)
-    if len(tor_interfaces) == 0:
-        logging.warning(f"{tor_name}  does not exist in main blueprint")
+    if tor_ae_id_in_main is None:
+        logging.warning(f"tor_ae_id_in_main is None")
         return
-    if 'ae' not in tor_interfaces[0]:
-        logging.warning(f"{tor_name}  does not have AE in main blueprint")
-        return
-    old_generic_system_ae_id = tor_interfaces[0]['ae']['id']
-    # logging.warning(f"{old_generic_system_ae_id=}")
+    
+    cts_to_remove = order.main_bp.get_interface_cts(tor_ae_id_in_main)
 
-    cts_to_remove = order.main_bp.get_cts_on_generic_system_with_only_ae(order.old_generic_system_label)
-
-    # capture links to the target old generic system in the main blueprint
-    old_generic_system_physical_links_query = f"""
-        node('system', label='{order.old_generic_system_label}', name='generic')
-            .out().node('interface', if_type='ethernet', name='gs_intf')
-            .out().node('link', name='link')
-            .in_().node('interface', name='leaf_intf')
-            .in_().node('system', system_type='switch', name='switch')
-    """
-    print(f"== remove_old_generic_system: {old_generic_system_physical_links_query=}")
-    # old_generic_system_physical_links has a list of dict with generic, gs_intf, link, leaf_intf, and leaf 
-    old_generic_system_physical_links = order.main_bp.query(old_generic_system_physical_links_query, multiline=True)
-
-    print(f"== remove_old_generic_system: about to call build_switch_pair_spec, {len(old_generic_system_physical_links)=}")
-    switch_pair_spec = build_switch_pair_spec(old_generic_system_physical_links, order.old_generic_system_label)
-    print(f"== remove_old_generic_system: {switch_pair_spec['links']=}")
-
-    # # TODO: Not used?
-    # pull_generic_system_data = pull_generic_system_off_switch(order.tor_bp, order.switch_label_pair)
-    # # pretty_yaml(pull_generic_system_data, "pull_generic_system_data")
-
-
-
-    ########
-    # delete the old generic system in main blueprint
-    # all the CTs on old generic system are on the AE link
-    print(f"== remove_old_generic_system: {order=}")
-    # if len(old_generic_system_ae_list):
-    if old_generic_system_ae_id:
-        # old_generic_system_label = order.config['blueprint']['tor']['torname']
-        # old_generic_system_ae_list = order.main_bp.query(f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='port_channel', name='ae2').out().node('link').in_().node(name='ae1').where(lambda ae1, ae2: ae1 != ae2 )")
-        # if len(old_generic_system_ae_list) == 0:
-        #     print(f"Generic system {old_generic_system_label} not found")
-        #     return
-        # old_generic_system_ae_id = old_generic_system_ae_list[0]['ae1']['id']
-        # print(f"{old_generic_system_ae_id=}")
-
-        # cts = order.main_bp.get_cts_on_generic_system_with_only_ae(old_generic_system_label)
-
-        # old_generic_system_physical_links has a list of dict with generic, gs_intf, link, leaf_intf, and leaf 
-        # old_generic_system_physical_links = main_bp.query(f"node('system', label='{old_generic_system_label}').out().node('interface', if_type='ethernet').out().node('link', name='link')")
-        old_generic_system_physical_links = order.main_bp.query(f"node('system', label='{order.old_generic_system_label}').out().node('interface', if_type='ethernet', name='gs_intf').out().node('link', name='link').in_().node('interface', name='leaf_intf').in_().node('system', name='leaf').where(lambda gs_intf, leaf_intf: gs_intf != leaf_intf)")
-
-
-        # damping CTs in chunks
-        while len(cts_to_remove) > 0:
-            cts_chunk = cts_to_remove[:50]
-            print(f"Removing Connecitivity Templates on this links: {len(cts_chunk)=}")
-            batch_ct_spec = {
-                "operations": [
-                    {
-                        "path": "/obj-policy-batch-apply",
-                        "method": "PATCH",
-                        "payload": {
-                            "application_points": [
-                                {
-                                    "id": old_generic_system_ae_id,
-                                    "policies": [ {"policy": x, "used": False} for x in cts_chunk]
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-            batch_result = order.main_bp.batch(batch_ct_spec, params={"comment": "batch-api"})
-            del cts_to_remove[:50]
-
-        batch_link_spec = {
+    # damping CTs in chunks
+    while len(cts_to_remove) > 0:
+        throttle_number = 50
+        cts_chunk = cts_to_remove[:throttle_number]
+        logging.debug(f"Removing Connecitivity Templates on this links: {len(cts_chunk)=}")
+        batch_ct_spec = {
             "operations": [
                 {
-                    "path": "/delete-switch-system-links",
-                    "method": "POST",
+                    "path": "/obj-policy-batch-apply",
+                    "method": "PATCH",
                     "payload": {
-                        "link_ids": [ x['link']['id'] for x in old_generic_system_physical_links ]
+                        "application_points": [
+                            {
+                                "id": tor_ae_id_in_main,
+                                "policies": [ {"policy": x, "used": False} for x in cts_chunk]
+                            }
+                        ]
                     }
                 }
             ]
         }
-        batch_result = order.main_bp.batch(batch_link_spec, params={"comment": "batch-api"})
-        print(f"== remove_old_generic_system: {batch_result=}")
-        while True:
-            if_generic_system_present = order.main_bp.query(f"node('system', label='{order.old_generic_system_label}')")
-            if len(if_generic_system_present) == 0:
-                break
-            print(f"== remove_old_generic_system: {if_generic_system_present=}")
-            time.sleep(3)
-        # the generic system is gone.            
+        batch_result = order.main_bp.batch(batch_ct_spec, params={"comment": "batch-api"})
+        del cts_to_remove[:throttle_number]
 
-    return switch_pair_spec
+    link_remove_spec = {
+        "operations": [
+            {
+                "path": "/delete-switch-system-links",
+                "method": "POST",
+                "payload": {
+                    "link_ids": [ x['link']['id'] for x in tor_interface_nodes_in_main ]
+                }
+            }
+        ]
+    }
+    batch_result = order.main_bp.batch(link_remove_spec, params={"comment": "batch-api"})
+    logging.debug(f"{link_remove_spec=}")
+    while True:
+        if_generic_system_present = order.main_bp.query(f"node('system', label='{order.tor_label}')")
+        if len(if_generic_system_present) == 0:
+            break
+        logging.info(f"{if_generic_system_present=}")
+        time.sleep(3)
+    # the generic system is gone.            
+
+    return
 
 
 def create_new_access_switch_pair(order, switch_pair_spec):
@@ -210,53 +132,90 @@ def create_new_access_switch_pair(order, switch_pair_spec):
     # IM _ATL-AS-Q5100-48T, _ATL-AS-5120-48T created
     # rack type _ATL-AS-5100-48T, _ATL-AS-5120-48T created and added
     # ATL-AS-LOOPBACK with 10.29.8.0/22
+    
+    REDUNDANCY_GROUP = 'redundancy_group'
 
-    existing_switches = order.main_bp.query(f"node('system', label='{order.old_generic_system_label}a', name='system')")
-    if len(existing_switches):
-        print(f"== create_new_access_switch_pair: {existing_switches=}")
+    # skip if the access switch piar already exists
+    tor_a = f"{order.tor_label}a"
+    if order.main_bp.get_system_from_label(tor_a):
+        logging.info(f"{tor_a} already exists in main blueprint")
         return
+    
     access_switch_pair_created = order.main_bp.add_generic_system(switch_pair_spec)
-    print(f"{access_switch_pair_created=}")
+    logging.info(f"{access_switch_pair_created=}")
 
-    # wait for the new systems to be created
+    # wait for the new system to be created
     while True:
-        new_systems = order.main_bp.query(f"node('link', label='{access_switch_pair_created[0]}', name='link').in_().node('interface').in_().node('system', name='leaf').out().node('redundancy_group', name='redundancy_group')")
+        new_systems = order.main_bp.query(f"""
+            node('link', label='{access_switch_pair_created[0]}', name='link')
+            .in_().node('interface')
+            .in_().node('system', name='leaf')
+            .out().node('redundancy_group', name='{REDUNDANCY_GROUP}'
+            )""", multiline=True)
         # There should be 5 links (including the peer link)
         if len(new_systems) == 2:
             break
-        print(f"Waiting for new systems to be created: {len(new_systems)=}")
+        logging.info(f"Waiting for new systems to be created: {len(new_systems)=}")
         time.sleep(3)
+
     # The first entry is the peer link
-    # rename redundancy group
-    order.main_bp.patch_node_single(new_systems[0]['redundancy_group']['id'], {"label": f"{order.old_generic_system_label}-pair" })
+
+    # rename redundancy group with <tor_label>-pair
+    order.main_bp.patch_node_single(
+        new_systems[0][REDUNDANCY_GROUP]['id'], 
+        {"label": f"{order.tor_label}-pair" }
+        )
+
     # rename each access switch for the label and hostname
     for leaf in new_systems:
         given_label = leaf['leaf']['label']
+        # when the label is <tor_label>1, rename it to <tor_label>a
         if given_label[-1] == '1':
-            new_label = f"{order.old_generic_system_label}a"
+            new_label = f"{order.tor_label}a"
+        # when the labe is <tor_label>2, rename it to <tor_label>b
         elif given_label[-1] == '2':
-            new_label = f"{order.old_generic_system_label}b"
+            new_label = f"{order.tor_label}b"
         else:
-            raise Exception(f"During renaming leaf names: Unexpected leaf label {given_label}")
-        order.main_bp.patch_node_single(leaf['leaf']['id'], {"label": new_label, "hostname": new_label })
+            logging.warning(f"skipp chaning name {given_label=}")
+            continue
+        order.main_bp.patch_node_single(
+            leaf['leaf']['id'], 
+            {"label": new_label, "hostname": new_label }
+            )
 
 
-def main(yaml_in_file):
-    order = ConsolidationOrder(yaml_in_file)
+def get_tor_ae_id_in_main(tor_interface_nodes_in_main, tor_name):
+    """
+    Get the AE id from the nodes list
+        Present warning if the AE does not exist
+    """
+    if len(tor_interface_nodes_in_main) == 0:
+        logging.warning(f"{tor_name}  does not exist in main blueprint")
+        return None
+    if 'ae' not in tor_interface_nodes_in_main[0]:
+        logging.warning(f"{tor_name}  does not have AE in main blueprint")
+        return None
+    return tor_interface_nodes_in_main[0]['ae']['id']
 
-    # find the switch side ae information from the old generic system in the main blueprint
-    # old_generic_system_ae_id = get_old_generic_system_ae_id(order)
 
+def main(order):
 
-    cts = order.main_bp.get_cts_on_generic_system_with_only_ae(order.old_generic_system_label)
+    tor_name = order.config['blueprint']['tor']['torname']
 
-    switch_pair_spec = remove_old_generic_system_from_main(order)
+    tor_interface_nodes_in_main = order.main_bp.get_server_interface_nodes(tor_name)
+    tor_ae_id_in_main = get_tor_ae_id_in_main(tor_interface_nodes_in_main, tor_name)
+
+    # build switch pair spec from the main blueprint generic system links
+    switch_pair_spec = build_switch_pair_spec(tor_interface_nodes_in_main, order.tor_label)
+    
+    remove_old_generic_system_from_main(order, tor_ae_id_in_main, tor_interface_nodes_in_main)
 
     create_new_access_switch_pair(order, switch_pair_spec)
 
 if __name__ == '__main__':
+    yaml_in_file = './tests/fixtures/config.yaml'
     log_level = logging.DEBUG
     prep_logging(log_level)
-    main('./tests/fixtures/config.yaml')    
-
+    order = ConsolidationOrder(yaml_in_file)
+    main(order)
 

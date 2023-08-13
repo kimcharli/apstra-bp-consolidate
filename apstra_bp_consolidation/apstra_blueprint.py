@@ -128,10 +128,10 @@ class CkApstraBlueprint:
             return None
         return self.system_id_2_label_cache[system_id]
 
-    def get_interfaces_of_generic_system(self, system_label, intf_name=None) -> str:
+    def get_server_interface_nodes(self, system_label, intf_name=None) -> str:
         """
-        Return interfaces from the system label
-            return 'member', optionally 'ae' if it is a LAG
+        Return interface nodes of the system label
+            return 'member' and 'switch', optionally 'ae' if it is a LAG
             It can be used for VLAN CT association
             TODO: implement intf_name in case of multiple link generic system
         TODO: cache generic system interface id
@@ -139,10 +139,10 @@ class CkApstraBlueprint:
         interface_query = f"""
             match(
                 node('system', label='{system_label}')
-                    .out().node('interface')
-                    .out().node('link')
+                    .out().node('interface', name='gs_intf')
+                    .out().node('link', name='link')
                     .in_().node('interface', name='member')
-                    .in_().node('system', system_type='switch'),
+                    .in_().node('system', system_type='switch', name='switch'),
                 optional(
                     node('interface', po_control_protocol='evpn', name='ae')
                         .out().node('interface')
@@ -326,20 +326,35 @@ class CkApstraBlueprint:
         url = f"{self.url_prefix}/batch"
         self.session.session.post(url, json=batch_spec, params=params)
 
-    def get_cts_on_generic_system_with_only_ae(self, generic_system_label) -> list:
+    # def get_cts_on_generic_system_with_only_ae(self, generic_system_label) -> list:
+    #     '''
+    #     Get the CTS of generic system with single AE
+    #     '''
+    #     ct_list_spec = f"""
+    #         match(
+    #             node('system', label='{generic_system_label}', system_type='server')
+    #                 .out().node('interface', if_type='port_channel', name='gs_ae')
+    #                 .out().node('link')
+    #                 .in_().node(name='switch_ae')
+    #                 .out().node('ep_group')
+    #                 .in_().node('ep_application_instance')
+    #                 .out().node('ep_endpoint_policy', policy_type_name='batch', name='batch')
+    #             .where(lambda switch_ae, gs_ae: switch_ae != gs_ae )
+    #         ).distinct(['batch'])
+    #     """
+    #     ct_list = [ x['batch']['id'] for x in self.query(ct_list_spec, multiline=True) ]
+    #     return ct_list
+
+    def get_interface_cts(self, interface_id) -> list:
         '''
-        Get the CTS of generic system with single AE
+        Get the CTS of the interface
         '''
         ct_list_spec = f"""
             match(
-                node('system', label='{generic_system_label}', system_type='server')
-                    .out().node('interface', if_type='port_channel', name='gs_ae')
-                    .out().node('link')
-                    .in_().node(name='switch_ae')
+                node(id='{interface_id}', name='switch_ae')
                     .out().node('ep_group')
                     .in_().node('ep_application_instance')
                     .out().node('ep_endpoint_policy', policy_type_name='batch', name='batch')
-                .where(lambda switch_ae, gs_ae: switch_ae != gs_ae )
             ).distinct(['batch'])
         """
         ct_list = [ x['batch']['id'] for x in self.query(ct_list_spec, multiline=True) ]

@@ -221,7 +221,7 @@ blueprint:
     # name: AZ-1_1-R4R17
     # torname: atl1tor-r4r17
     name: AZ-1_1-R5R14
-    torname: atl1tor-r5r14
+    torname: atl1tor-r5r14 # the generic system name to be removed in the main blueprint 
     switch_names: [ atl1tor-r5r14a, atl1tor-r5r14b ]
     new_interface_map: _ATL-AS-5120-48T
     # generic_systems:
