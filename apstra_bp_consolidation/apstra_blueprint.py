@@ -31,6 +31,7 @@ class CkApstraBlueprint:
 
         self.system_label_2_id_cache = {} # { system_label: { id: id, interface_map_id: id, device_profile_id: id }
         self.system_id_2_label_cache = {} # { system_label: { id: id, interface_map_id: id, device_profile_id: id }
+        self.logger.debug(f"{self.id=}")
 
     def get_id(self) -> str:
         """
@@ -138,7 +139,7 @@ class CkApstraBlueprint:
         """
         interface_query = f"""
             match(
-                node('system', label='{system_label}')
+                node('system', system_type='server', label='{system_label}')
                     .out().node('interface', name='gs_intf')
                     .out().node('link', name='link')
                     .in_().node('interface', name='member')
@@ -151,6 +152,36 @@ class CkApstraBlueprint:
             )
         """
         return self.query(interface_query, multiline=True)
+
+    def get_switch_interface_nodes(self, system_labels, intf_name=None) -> str:
+        """
+        Return interface nodes of the switches
+            return 'member' and 'switch', optionally 'ae' if it is a LAG
+            It can be used for VLAN CT association
+            TODO: implement intf_name in case of multiple link generic system
+        TODO: cache generic system interface id
+        """
+        interface_query = f"""
+            match(
+                node('system', system_type='server', name='generic')
+                    .out().node('interface', name='gs_intf')
+                    .out().node('link', name='link')
+                    .in_().node('interface', name='member')
+                    .in_().node('system', system_type='switch', label=is_in({system_labels}), name='switch'),
+                optional(
+                    node('interface', po_control_protocol='evpn', name='ae')
+                        .out().node('interface')
+                        .out().node(name='member')
+                ),
+                optional(
+                    node('tag', name='tag').out().node(name='link')
+                    )
+            )
+        """
+        # self.logger.debug(f"{interface_query=}")
+        interface_nodes = self.query(interface_query, multiline=True)
+        # self.logger.debug(f"{interface_nodes=}")
+        return interface_nodes
 
 
     def get_single_vlan_ct_id(self, vn_id: int):
@@ -307,6 +338,7 @@ class CkApstraBlueprint:
         tag_nodes = self.query(f"node(id=is_in({nodes})).in_().node('tag', label=is_in({tags_to_add}), name='tag')")
         are_tags_the_same = len(tag_nodes) == (len(tags_to_add) * len(nodes))
 
+        # self.logger.debug(f"{nodes=} {tags_to_add=}, {tags_to_remove=} {are_tags_the_same=}")
         # The tags are the same as the existing tags
         if are_tags_the_same or (not tags_to_add and not tags_to_remove):
             if print_prefix:
@@ -373,6 +405,6 @@ if __name__ == "__main__":
     log_level = logging.DEBUG
     prep_logging(log_level)
     apstra = CkApstraSession("10.85.192.50", 443, "admin", "zaq1@WSXcde3$RFV")
-    bp = CkApstraBlueprint(apstra, "pslab")
+    bp = CkApstraBlueprint(apstra, "terra")
     print(bp.get_id())
 

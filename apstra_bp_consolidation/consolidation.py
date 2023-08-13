@@ -3,7 +3,7 @@
 import json
 import time
 import copy
-# import yaml
+import yaml
 from datetime import datetime
 import logging
 
@@ -23,7 +23,7 @@ class ConsolidationOrder:
     # switch_label_pair
 
     def __init__(self, yaml_in_file):
-        import yaml
+        # import yaml
 
         self.yaml_in_file = yaml_in_file
         with open(yaml_in_file, 'r') as file:

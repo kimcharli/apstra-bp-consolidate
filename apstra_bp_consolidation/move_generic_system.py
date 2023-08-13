@@ -9,7 +9,7 @@ from consolidation import ConsolidationOrder
 
 def pull_generic_system_off_switch(the_bp, switch_label_pair: list) -> dict:
     """
-    Pull the generic system off switch from the blueprint.
+    Pull the generic system off switches from the blueprint.
 
     Args:
         the_bp: The blueprint object.
@@ -24,76 +24,37 @@ def pull_generic_system_off_switch(the_bp, switch_label_pair: list) -> dict:
             aggregate_link: <aggregate_link_id>
             tags: []
     """
-    print(f"==== Pulling generic system connected to {switch_label_pair=} of blueprint {the_bp.label} ====")
+    logging.info(f"{switch_label_pair=} of blueprint {the_bp.label}")
     generic_systems_data = {}
-    # generic systems data with member interfaces on both sides.
-    generic_systems_query = f"""
-        node('system', role='generic', name='generic')
-            .out().node('interface', name='gs_intf')
-            .out().node('link', name='link')
-            .in_().node(name='sw_intf')
-            .in_().node('system', label=is_in({switch_label_pair}), name='switch')
-            .where(lambda gs_intf, sw_intf: gs_intf != sw_intf)
-    """
-    # generic_systems = the_bp.query(f"node('system', role='generic', name='generic').out().node('interface', name='gs_intf').out().node('link', name='link').in_().node(name='sw_intf').in_().node('system', label=is_in({switch_label_pair}), name='switch').where(lambda gs_intf, sw_intf: gs_intf != sw_intf)")
-    generic_systems = the_bp.query(generic_systems_query, multiline=True)
-    # aggregate links to associate them to the member interfaces
-    aggregate_links_query = f"""
-        match(node('link', link_type='aggregate_link', name='aggregate_link')
-            .in_().node().out().node(name='member_interface')
-            .out().node('link', name='member_link')
-            .in_().node().in_().node('system', label=is_in({switch_label_pair})),node(name='aggregate_link')
-            .in_().node('interface').in_().node('system', name='system'))
-    """
-    # aggregate_links = the_bp.query(f"match(node('link', link_type='aggregate_link', name='aggregate_link').in_().node().out().node(name='member_interface').out().node('link', name='member_link').in_().node().in_().node('system', label=is_in({switch_label_pair})),node(name='aggregate_link').in_().node('interface').in_().node('system', name='system'))")
-    aggregate_links = the_bp.query(aggregate_links_query, multiline=True)
-    for gs in generic_systems:
-        # TODO: generalize upglinks processing
-        # most QFX5120 has port 48 and 49 as uplinks
-        if gs['sw_intf']['if_name'] in ["et-0/0/48", "et-0/0/49"]:
-            # those are uplinks
+
+    interface_nodes_in_tor = the_bp.get_switch_interface_nodes(switch_label_pair)
+
+    for link in interface_nodes_in_tor:
+        # skip the uplinks. peer link will not present
+        logging.debug(f"reading link: {link['switch']['label']}:{link['member']['if_name']}")
+        if link['member']['if_name'] in ["et-0/0/48", "et-0/0/49"]:
+            logging.debug(f"skipping uplink: {link['switch']['label']}:{link['member']['if_name']}")
             continue
-        generic_system_label = gs['generic']['label']
-        link_id = gs['link']['id']
+        generic_system_label = link['generic']['label']
+        link_id = link['link']['id']
         # create entry for this generic system if it doesn't exist
         if generic_system_label not in generic_systems_data.keys():
             generic_systems_data[generic_system_label] = {}
-        this_data = {'tags': []}
-        this_data['sw_label'] = gs['switch']['label']
-        this_data['sw_if_name'] = gs['sw_intf']['if_name']
-        this_data['speed'] = gs['link']['speed']
-        # register this data as the link id
+        if link_id in generic_systems_data[generic_system_label].keys():
+            # this link is already in the generic system data
+            # this happens when the link has multiple tags
+            this_data = generic_systems_data[generic_system_label][link_id]
+        else:
+            this_data = {'tags': []}
+            this_data['sw_label'] = link['switch']['label']
+            this_data['sw_if_name'] = link['member']['if_name']
+            this_data['speed'] = link['link']['speed']
+            if link['ae']:
+                this_data['aggregate_link'] = link['ae']['id']
+        if link['tag']:
+            this_data['tags'].append(link['tag']['label'])
         generic_systems_data[generic_system_label][link_id] = this_data
-        # pretty_yaml(generic_systems_data, "generic_systems_data")
-    # update the aggregate link id on the associated member links
-    for al in aggregate_links:
-        if al['system']['label'] not in generic_systems_data.keys():
-            # those may be uplinks
-            continue
-        generic_systems_data[al['system']['label']][al['member_link']['id']]['aggregate_link'] = al['aggregate_link']['id']
-    # retrieve the tags information
-    # link_tags = the_bp.query("node('system', role='generic', name='generic_system').out().node('interface').out().node('link', link_type='ethernet', name='link').in_().node('tag', name='tag')")
-    link_tags_query = f"""
-        match(node('tag', name='tag')
-            .out().node('link', name='member_link')
-            .in_().node('interface')
-            .in_().node('system', label=is_in({switch_label_pair}), name='switch'), 
-            node('system', role='generic', name='generic_system')
-                .out().node('interface')
-                .out().node('link', name='member_link'))
-    """
-    link_tags = the_bp.query(link_tags_query, multiline=True)
-    for tag in link_tags:
-        generic_system_label = tag['generic_system']['label']
-        member_link_id = tag['member_link']['id']
-        tag_value = tag['tag']['label']
-        if tag['generic_system']['label'] not in generic_systems_data.keys():
-            # this shouldn't happen
-            continue
-        generic_systems_data[generic_system_label][member_link_id]['tags'].append(tag_value)
-    # print(f"==== generic systems pulled: {len(generic_systems_data)}, {generic_systems_data=}")
-    print(f"====== generic systems pulled from {the_bp.label}: {len(generic_systems_data)}")
-    # generic_system_label.link.dict
+
     return generic_systems_data
 
 # generic system data: generic_system_label.link.dict
@@ -112,13 +73,13 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
     """
     # to cache the system id of the systems includin leaf
     main_bp = order.main_bp
-    print(f"==== new_generic_systems() Creating new generic systems in {main_bp.label}: {len(generic_system_data)} ====")
+    logging.info(f"Creating new generic systems in {main_bp.label}: {len(generic_system_data)}")
     system_id_cache = {}
 
     for generic_system_label, generic_system_data in generic_system_data.items():
         if main_bp.get_system_from_label(generic_system_label):
             # this generic system already exists
-            print(f"     = new_generic_systems() skipping: {generic_system_label} already exists in the main blueprint")
+            logging.info(f"skipping: {generic_system_label} already exists in the main blueprint")
             continue
         lag_group = {}
         generic_system_spec = {
@@ -146,7 +107,7 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
             generic_system_spec['links'].append(link_spec)
         new_system = {
             'system_type': 'server',
-            'label': order.rename_generic_system(generic_system_label),
+            'label': generic_system_label,
             'hostname': None, # hostname should not have '_' in it
             'port_channel_id_min': 0,
             'port_channel_id_max': 0,
@@ -182,13 +143,12 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
             }
         }
         generic_system_spec['new_systems'].append(new_system)
-        # pretty_yaml(generic_system_spec, generic_system_label)
         ethernet_interfaces = [f"{main_bp.get_system_label(x['switch']['system_id'])}:{x['switch']['if_name']}" for x in generic_system_spec['links']]
-        print(f"     = new_generic_systems() adding {generic_system_label} with {ethernet_interfaces} {len(lag_group)} LAG in the blueprint {main_bp.label}")
+        logging.debug(f"adding {generic_system_label} with {ethernet_interfaces} {len(lag_group)} LAG in the blueprint {main_bp.label}")
         main_bp.add_generic_system(generic_system_spec)
 
 # generic system data: generic_system_label.link.dict
-def update_generic_systems_lag(main_bp, switch_label_pair, tor_generic_systems_data):
+def update_generic_systems_lag(main_bp, switch_label_pair, access_switch_generic_systems_data):
     """
     Update LAG mode for the new generic systems
         <generic_system_label>:
@@ -204,10 +164,10 @@ def update_generic_systems_lag(main_bp, switch_label_pair, tor_generic_systems_d
 
     """
     # pull the generic systems from the main blueprint
-    print(f"== Updating LAG mode for the new generic systems in {main_bp.label} for {len(tor_generic_systems_data)} systems ====")
+    logging.debug(f"Updating LAG mode for the new generic systems in {main_bp.label} for {len(access_switch_generic_systems_data)} systems ====")
     main_generic_system_data = pull_generic_system_off_switch(main_bp, switch_label_pair)
 
-    for tor_generic_label, tor_generic_data in tor_generic_systems_data.items():
+    for tor_generic_label, tor_generic_data in access_switch_generic_systems_data.items():
         lag_data = {}
         lag_number = 1 # to create unique group_label per generic system
         # group the links by the aggregate link
@@ -250,10 +210,10 @@ def update_generic_systems_lag(main_bp, switch_label_pair, tor_generic_systems_d
                 print_prefix=None
                 link_data = main_bp.query(link_query, print_prefix=print_prefix, split=True)
                 if len(link_data) != 1:
-                    print(f"     = update_generic_systems_lag() Wrong link_data for query: {link_query=}")
+                    logging.warning(f"Wrong link_data for query: {link_query=}")
                 # skip if the link is already in the correct group_label
                 if link_data[0]['link']['group_label'] == f"link{lag_number}":
-                    print(f"     = update_generic_systems_lag() link already in the correct LAG mode: {link_data[0]['link']['group_label']}")
+                    logging.debug(f"link already in the correct LAG mode: {link_data[0]['link']['group_label']}")
                     continue
                 link_id = link_data[0]['link']['id']
                 lag_spec['links'][link_id] = { 'group_label': f"link{lag_number}", 'lag_mode': 'lacp_active' }
@@ -263,7 +223,7 @@ def update_generic_systems_lag(main_bp, switch_label_pair, tor_generic_systems_d
             # update the lag if there are links to update
             if len(lag_spec['links']):
                 link_members = [ f"{x['sw_label']}:{x['sw_if_name']}" for x in old_lag_data]
-                print(f"     = update_generic_systems_lag() updating lag: {tor_generic_label} with {link_members}")
+                logging.debug(f"updating lag: {tor_generic_label} with {link_members}")
                 lag_updated = main_bp.patch_leaf_server_link_labels(lag_spec, print_prefix=print_prefix)
                 lag_number += 1
 
@@ -275,7 +235,7 @@ def update_generic_systems_lag(main_bp, switch_label_pair, tor_generic_systems_d
     pass
 
 
-def update_generic_systems_link_tag(main_bp, tor_generic_systems_data):
+def update_generic_systems_link_tag(main_bp, access_switch_generic_systems_data):
     """
     Update tagging on the links towards the new generic systems
         <generic_system_label>:
@@ -290,15 +250,15 @@ def update_generic_systems_link_tag(main_bp, tor_generic_systems_data):
                 untagged_vlan: 
 
     """
-    print(f"== update_generic_systems_link_tag() Updating tagging for the new generic systems")
-    for generic_system_label, generic_system_data in tor_generic_systems_data.items():
+    logging.debug(f" Updating tagging for the new generic systems")
+    for generic_system_label, generic_system_data in access_switch_generic_systems_data.items():
         for _, old_link_data in generic_system_data.items():
             if len(old_link_data['tags']) == 0:
                 # no tag to update
                 continue
             # the tag can be 'forceup'
             tags = old_link_data['tags']
-            print(f"     = update_generic_systems_link_tag() updating tag:  {tags=} on the link of {old_link_data['sw_label']}:{old_link_data['sw_if_name']}")
+            logging.debug(f"updating tag:  {tags=} on the link of {old_link_data['sw_label']}:{old_link_data['sw_if_name']}")
             link_query = f"""
                 node('system', label='{generic_system_label}')
                     .out().node('interface')
@@ -307,6 +267,7 @@ def update_generic_systems_link_tag(main_bp, tor_generic_systems_data):
                     .in_().node('system', label='{old_link_data['sw_label']}')
             """
             target_link_result = main_bp.query(link_query, multiline=True)
+            # logging.debug(f"{link_query=}, {target_link_result=}")
             # print_prefix='link_query for tag'
             print_prefix=None
             tagged = main_bp.post_tagging([x['link']['id'] for x in target_link_result], tags_to_add=tags, print_prefix=print_prefix)
@@ -315,29 +276,30 @@ def update_generic_systems_link_tag(main_bp, tor_generic_systems_data):
 
 
 
-def main(yaml_in_file):
-    order = ConsolidationOrder(yaml_in_file)
-
-    log_level = logging.INFO
-    prep_logging(log_level)
-
+def main(order):
 
     ########
     # create new generic systems
     # generic system data: generic_system_label.link.dict
     # TODO: make unique for the generic system label
-    generic_systems_data = pull_generic_system_off_switch(order.tor_bp, order.switch_label_pair)
+    tor_generic_systems_data = pull_generic_system_off_switch(order.tor_bp, order.switch_label_pair)
 
-    print(f"=== main: get generic_systems_data. {len(generic_systems_data)=}")
+    # rename the generic system label
+    access_switch_generic_systems_data = {order.rename_generic_system(old_label): data for old_label, data in tor_generic_systems_data.items()}
 
-    new_generic_systems(order, generic_systems_data)
+    new_generic_systems(order, access_switch_generic_systems_data)
 
     # implemented in new_generic_systems
     # update_generic_systems_lag(main_bp, switch_label_pair, generic_systems_data)
 
-    update_generic_systems_link_tag(order.main_bp, generic_systems_data)
+    update_generic_systems_link_tag(order.main_bp, access_switch_generic_systems_data)
 
 
 if __name__ == '__main__':
-    main('./tests/fixtures/config.yaml')    
+    yaml_in_file = './tests/fixtures/config.yaml'
+    log_level = logging.DEBUG
+    prep_logging(log_level)
+    order = ConsolidationOrder(yaml_in_file)
+    main(order)
+
 
