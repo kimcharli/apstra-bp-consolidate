@@ -150,14 +150,14 @@ class CkApstraBlueprint:
         interface_query = f"""
             match(
                 node('system', system_type='server', label='{system_label}')
-                    .out().node('interface', name='gs_intf')
-                    .out().node('link', name='{CkEnum.LINK}')
-                    .in_().node('interface', name='{CkEnum.MEMBER_INTERFACE}')
-                    .in_().node('system', system_type='switch', name='{CkEnum.MEMBER_SWITCH}'),
+                    .out('hosted_interfaces').node('interface', name='gs_intf')
+                    .out('link').node('link', name='{CkEnum.LINK}')
+                    .in_('link').node('interface', name='{CkEnum.MEMBER_INTERFACE}')
+                    .in_('hosted_interfaces').node('system', system_type='switch', name='{CkEnum.MEMBER_SWITCH}'),
                 optional(
                     node('interface', po_control_protocol='evpn', name='{CkEnum.EVPN_INTERFACE}')
-                        .out().node('interface')
-                        .out().node(name='{CkEnum.MEMBER_INTERFACE}')
+                        .out('composed_of').node('interface')
+                        .out('composed_of').node(name='{CkEnum.MEMBER_INTERFACE}')
                 )
             )
         """
@@ -202,8 +202,13 @@ class CkApstraBlueprint:
 
         Return tuple of (tagged CT id, untagged CT id)
         '''
-        ct_list_spec = f"node('virtual_network', vn_id='{vn_id}', name='virtual_network').in_().node('ep_endpoint_policy', name='ep_endpoint_policy').in_('ep_first_subpolicy').node().in_('ep_subpolicy').node('ep_endpoint_policy', name='ct')"
-        ct_list = self.query(ct_list_spec)
+        ct_list_spec = f"""
+            node('virtual_network', vn_id='{vn_id}', name='virtual_network')
+                .in_().node('ep_endpoint_policy', name='ep_endpoint_policy')
+                .in_('ep_first_subpolicy').node()
+                .in_('ep_subpolicy').node('ep_endpoint_policy', name='ct')
+        """
+        ct_list = self.query(ct_list_spec, multiline=True)
         tagged_nodes = [x for x in ct_list if 'vlan_tagged' in x['ep_endpoint_policy']['attributes']]
         tagged_ct = len(tagged_nodes) and tagged_nodes[0]['ct']['id'] or None
         # tagged_ct = [x['id'] for x in ct_list if x and 'vlan_tagged' in x['ep_endpoint_policy']['attributes']][0] or None
@@ -222,12 +227,10 @@ class CkApstraBlueprint:
         Returns:
             The ID of the switch-system-link ids.
         """
-        # print(f"==== BP: add_generic_system(): {gs_spec['links']=}")
         existing_system_query = f"node('system', label='{gs_spec['new_systems'][0]['label']}', name='system')"
-        # print(f"====== BP: add_generic_system(): {existing_system_query=}")
         existing_system = self.query(existing_system_query)
         if len(existing_system) > 0:
-            # print(f"====== BP: skipping: add_generic_system(): System already exists: {gs_spec['new_systems'][0]['label']=}")
+            # skipping if the system already exists
             return []
         url = f"{self.url_prefix}/switch-system-links"
         created_generic_system = self.session.session.post(url, json=gs_spec)
@@ -235,8 +238,6 @@ class CkApstraBlueprint:
             self.logger.error(f"System not created: {created_generic_system=}, {created_generic_system.status_code=}, {created_generic_system.text=}")
             return []
         if created_generic_system is None or len(created_generic_system.json()) == 0 or 'ids' not in created_generic_system.json():
-            # print(f"add_generic_system(): System not created: {created_generic_system=} for {gs_spec=}")
-            # pretty_yaml(gs_spec, "failed spec()")
             return []
         return created_generic_system.json()['ids']
 
