@@ -5,6 +5,7 @@ import logging
 
 from consolidation import prep_logging
 from consolidation import ConsolidationOrder
+from apstra_blueprint import CkEnum
 
 
 def pull_generic_system_off_switch(the_bp, switch_label_pair: list) -> dict:
@@ -31,12 +32,12 @@ def pull_generic_system_off_switch(the_bp, switch_label_pair: list) -> dict:
 
     for link in interface_nodes_in_tor:
         # skip the uplinks. peer link will not present
-        logging.debug(f"reading link: {link['switch']['label']}:{link['member']['if_name']}")
-        if link['member']['if_name'] in ["et-0/0/48", "et-0/0/49"]:
-            logging.debug(f"skipping uplink: {link['switch']['label']}:{link['member']['if_name']}")
+        logging.debug(f"reading link: {link[CkEnum.MEMBER_SWITCH]['label']}:{link[CkEnum.MEMBER_INTERFACE]['if_name']}")
+        if link[CkEnum.MEMBER_INTERFACE]['if_name'] in ["et-0/0/48", "et-0/0/49"]:
+            logging.debug(f"skipping uplink: {link[CkEnum.MEMBER_SWITCH]['label']}:{link[CkEnum.MEMBER_INTERFACE]['if_name']}")
             continue
-        generic_system_label = link['generic']['label']
-        link_id = link['link']['id']
+        generic_system_label = link[CkEnum.GENERIC_SYSTEM]['label']
+        link_id = link[CkEnum.LINK]['id']
         # create entry for this generic system if it doesn't exist
         if generic_system_label not in generic_systems_data.keys():
             generic_systems_data[generic_system_label] = {}
@@ -46,13 +47,13 @@ def pull_generic_system_off_switch(the_bp, switch_label_pair: list) -> dict:
             this_data = generic_systems_data[generic_system_label][link_id]
         else:
             this_data = {'tags': []}
-            this_data['sw_label'] = link['switch']['label']
-            this_data['sw_if_name'] = link['member']['if_name']
-            this_data['speed'] = link['link']['speed']
-            if link['ae']:
-                this_data['aggregate_link'] = link['ae']['id']
+            this_data['sw_label'] = link[CkEnum.MEMBER_SWITCH]['label']
+            this_data['sw_if_name'] = link[CkEnum.MEMBER_INTERFACE]['if_name']
+            this_data['speed'] = link[CkEnum.LINK]['speed']
+            if link[CkEnum.EVPN_INTERFACE]:
+                this_data['aggregate_link'] = link[CkEnum.EVPN_INTERFACE]['id']
         if link['tag']:
-            this_data['tags'].append(link['tag']['label'])
+            this_data['tags'].append(link[CkEnum.TAG]['label'])
         generic_systems_data[generic_system_label][link_id] = this_data
 
     return generic_systems_data
@@ -73,11 +74,12 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
     """
     # to cache the system id of the systems includin leaf
     main_bp = order.main_bp
-    logging.info(f"Creating new generic systems in {main_bp.label}: {len(generic_system_data)}")
-    system_id_cache = {}
+    total_gs = len(generic_system_data)
+    current_gs = 1
+    logging.info(f"Creating new generic systems in {main_bp.label}: {total_gs}")
 
     for generic_system_label, generic_system_data in generic_system_data.items():
-        if main_bp.get_system_from_label(generic_system_label):
+        if main_bp.get_system_node_from_label(generic_system_label):
             # this generic system already exists
             logging.info(f"skipping: {generic_system_label} already exists in the main blueprint")
             continue
@@ -93,7 +95,7 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
                     'system_id': None
                 },
                 'switch': {
-                    'system_id': main_bp.get_system_from_label(link_data['sw_label'])['id'],
+                    'system_id': main_bp.get_system_node_from_label(link_data['sw_label'])['id'],
                     'transformation_id': main_bp.get_transformation_id(link_data['sw_label'], link_data['sw_if_name'] , link_data['speed']),
                     'if_name': link_data['sw_if_name'],
                 }                
@@ -144,8 +146,9 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
         }
         generic_system_spec['new_systems'].append(new_system)
         ethernet_interfaces = [f"{main_bp.get_system_label(x['switch']['system_id'])}:{x['switch']['if_name']}" for x in generic_system_spec['links']]
-        logging.debug(f"adding {generic_system_label} with {ethernet_interfaces} {len(lag_group)} LAG in the blueprint {main_bp.label}")
+        logging.debug(f"adding {current_gs}/{total_gs} {generic_system_label} with {ethernet_interfaces} {len(lag_group)} LAG in the blueprint {main_bp.label}")
         main_bp.add_generic_system(generic_system_spec)
+        current_gs += 1
 
 # generic system data: generic_system_label.link.dict
 def update_generic_systems_lag(main_bp, switch_label_pair, access_switch_generic_systems_data):

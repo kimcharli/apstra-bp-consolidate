@@ -63,53 +63,11 @@ class ConsolidationOrder:
 
 
 def pretty_yaml(data: dict, label: str) -> None:
-    print(f"==== {label}\n{yaml.dump(data)}\n====")
+    logging.debug(f"==== {label}\n{yaml.dump(data)}\n====")
 
 
-def deep_compare(dict1: dict, dict2: dict) -> dict:
-    # print the differences between two dictionaries
-    # return the differences
-    my_logger = logging.getLogger()
 
-    diffs = {
-        'only_in_dict1_XXXXX': [],
-        'only_in_dict2_XXXXX': [],
-    }
-
-    if type(dict1) != type(dict2):
-        my_logger.error(f"Type mismatch: {type(dict1)=}, {type(dict2)=}")
-        return diffs
-    if type(dict1) == dict:
-        for key, value in dict1.items():
-            if key not in dict2:
-                diffs[key] = value
-                diffs['only_in_dict1_XXXXX'].append(key)
-                continue
-            if value != dict2[key]:
-                child = deep_compare(value, dict2[key])
-                if len(child) > 0:
-                    diffs[key] = deep_compare(value, dict2[key])
-        for key, value in dict2.items():
-            if key not in dict1:
-                diffs[key] = value
-                diffs['only_in_dict2_XXXXX'].append(key)
-    if type(dict1) == list:
-        for item in dict1:
-            if item not in dict2:
-                diffs['only_in_dict1_XXXXX'].append(item)
-        for item in dict2:
-            if item not in dict1:
-                diffs['only_in_dict2_XXXXX'].append(item)
-    if len(diffs['only_in_dict1_XXXXX']) == 0:
-        del(diffs['only_in_dict1_XXXXX'])
-    if len(diffs['only_in_dict2_XXXXX']) == 0:
-        del(diffs['only_in_dict2_XXXXX'])
-    return diffs
-
-
-def main(yaml_in_file: str):
-    # pretty_yaml(config, "config")
-    order = ConsolidationOrder(yaml_in_file)
+def main(order):
  
     # revert any staged changes
     # main_bp.revert()
@@ -146,16 +104,18 @@ def main(yaml_in_file: str):
     from move_generic_system import new_generic_systems
     from move_generic_system import update_generic_systems_link_tag
 
-    generic_systems_data = pull_generic_system_off_switch(order.tor_bp, order.switch_label_pair)
 
-    print(f"=== main: get generic_systems_data. {len(generic_systems_data)=}")
+    tor_generic_systems_data = pull_generic_system_off_switch(order.tor_bp, order.switch_label_pair)
 
-    new_generic_systems(order.main_bp, generic_systems_data)
+    # rename the generic system label
+    access_switch_generic_systems_data = {order.rename_generic_system(old_label): data for old_label, data in tor_generic_systems_data.items()}
+
+    new_generic_systems(order, access_switch_generic_systems_data)
 
     # implemented in new_generic_systems
     # update_generic_systems_lag(main_bp, switch_label_pair, generic_systems_data)
 
-    update_generic_systems_link_tag(order.main_bp, generic_systems_data)
+    update_generic_systems_link_tag(order.main_bp, access_switch_generic_systems_data)
 
 
 
@@ -194,8 +154,10 @@ def main(yaml_in_file: str):
 
 
 if __name__ == "__main__":
-    log_level = logging.INFO
+    yaml_in_file = './tests/fixtures/config.yaml'
+    log_level = logging.DEBUG
     prep_logging(log_level)
-    main('./tests/fixtures/config.yaml')
+    order = ConsolidationOrder(yaml_in_file)
+    main(order)
 
 

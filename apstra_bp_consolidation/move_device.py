@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
 
-import json
 import logging
 
-from apstra_session import CkApstraSession
-from apstra_blueprint import CkApstraBlueprint
+from consolidation import ConsolidationOrder
 from consolidation import prep_logging
-from consolidation import deep_compare
-from consolidation import pretty_yaml
-
 
 def move_device(order):
     ########
@@ -16,13 +11,12 @@ def move_device(order):
     system_snapshot = {} # label: sn
     remove_spec = []
     for switch_label in order.switch_label_pair:
-        systems_got = order.tor_bp.get_system_from_label(switch_label)
+        systems_got = order.tor_bp.get_system_node_from_label(switch_label)
         id = systems_got['id']
-        sn = systems_got['sn']
-        deploy_mode = systems_got['deploy_mode']
-        # TODO: any variations
-        if sn is not None and deploy_mode is not None:
-            system_snapshot[switch_label] = sn
+        system_id = systems_got['system_id']
+        # deploy_mode = systems_got['deploy_mode']
+        if system_id is not None:
+            system_snapshot[switch_label] = system_id
             remove_spec.append({
                 'system_id': None,
                 'id': id,
@@ -36,10 +30,10 @@ def move_device(order):
 
     add_spec = []
     for switch_label in order.switch_label_pair:
-        systems_got = order.main_bp.get_system_from_label(switch_label)
-        id = systems_got['id']
-        sn = systems_got['sn']
-        deploy_mode = systems_got['deploy_mode']
+        system_got = order.main_bp.get_system_node_from_label(switch_label)
+        id = system_got['id']
+        # system_id = system_got['system_id']
+        # deploy_mode = system_got['deploy_mode']
         add_spec.append({
             'id': id,
             'deploy_mode': 'deploy',
@@ -52,13 +46,13 @@ def move_device(order):
     # add_device_to_bp(order.main_bp, order.switch_label_pair)
 
 
-def main(yaml_in_file):
-    from consolidation import ConsolidationOrder
-    order = ConsolidationOrder(yaml_in_file)
+def main(order):
     move_device(order)
 
 
 if __name__ == '__main__':
+    yaml_in_file = './tests/fixtures/config.yaml'
     log_level = logging.DEBUG
     prep_logging(log_level)
-    main('./tests/fixtures/config.yaml')    
+    order = ConsolidationOrder(yaml_in_file)
+    main(order)

@@ -6,7 +6,7 @@ import logging
 
 from consolidation import ConsolidationOrder
 from consolidation import prep_logging
-
+from apstra_blueprint import CkEnum
 
 def build_access_switch_fabric_links_dict(links_dict:dict) -> dict:
     '''
@@ -32,9 +32,9 @@ def build_access_switch_fabric_links_dict(links_dict:dict) -> dict:
             "lag_mode": "lacp_active",
             "system_peer": translation_table[tor_intf_name]['system_peer'],
             "switch": {
-                "system_id": links_dict['switch']['id'],
+                "system_id": links_dict[CkEnum.MEMBER_SWITCH]['id'],
                 "transformation_id": 2,
-                "if_name": links_dict['member']['if_name']
+                "if_name": links_dict[CkEnum.MEMBER_INTERFACE]['if_name']
             },
             "system": {
                 "system_id": None,
@@ -137,7 +137,7 @@ def create_new_access_switch_pair(order, switch_pair_spec):
 
     # skip if the access switch piar already exists
     tor_a = f"{order.tor_label}a"
-    if order.main_bp.get_system_from_label(tor_a):
+    if order.main_bp.get_system_node_from_label(tor_a):
         logging.info(f"{tor_a} already exists in main blueprint")
         return
     
@@ -192,10 +192,10 @@ def get_tor_ae_id_in_main(tor_interface_nodes_in_main, tor_name):
     if len(tor_interface_nodes_in_main) == 0:
         logging.warning(f"{tor_name}  does not exist in main blueprint")
         return None
-    if 'ae' not in tor_interface_nodes_in_main[0]:
+    if CkEnum.EVPN_INTERFACE not in tor_interface_nodes_in_main[0]:
         logging.warning(f"{tor_name}  does not have AE in main blueprint")
         return None
-    return tor_interface_nodes_in_main[0]['ae']['id']
+    return tor_interface_nodes_in_main[0][CkEnum.EVPN_INTERFACE]['id']
 
 
 def main(order):

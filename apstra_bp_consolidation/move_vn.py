@@ -52,12 +52,10 @@ def deep_diff(dict1, dict2, path=""):
 
 def pull_vni_ids(the_bp, switch_label_pair: list) -> list:
     """
-    Pull the vni ids for the switch pair
+    Pull the vni ids present in the switch pair
 
     """
-    my_logger = logging.getLogger()
-
-    my_logger.debug(f"pulling vni ids for {switch_label_pair=} from {the_bp.label}")
+    logging.debug(f"pulling vni ids for {switch_label_pair=} from {the_bp.label}")
     vn_list_query = f"""
         match(
             node('system', label=is_in({switch_label_pair}))
@@ -66,16 +64,14 @@ def pull_vni_ids(the_bp, switch_label_pair: list) -> list:
         ).distinct(['vn'])"""
     vn_list = the_bp.query(vn_list_query)
     vni_list = [ x['vn']['vn_id'] for x in vn_list ]
-    my_logger.debug(f"found {len(vni_list)=}")
+    logging.debug(f"found {len(vni_list)=}")
     return vni_list
 
 def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
     """
     Assign VN to the access switch pair
     """
-    my_logger = logging.getLogger()
-
-    my_logger.debug(f"assigning vni ids for {switch_label_pair=} {vni_list[0]=}")
+    logging.debug(f"assigning vni ids for {switch_label_pair=} {vni_list[0]=}")
 
     # get the redundancy group id of the access switch pair and the leaf switch pair
     rg_query = f"""node(type='redundancy_group', name='rg')
@@ -87,7 +83,7 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
         .out().node(type='redundancy_group', name='leaf-rg')"""
     rg_got = the_bp.query(rg_query, multiline=True)
     if len(rg_got) == 0:
-        my_logger.warning(f"access_switch_assign_vns() {switch_label_pair=} not found")
+        logging.warning(f"access_switch_assign_vns() {switch_label_pair=} not found")
         return
     rg_id = rg_got[0]['rg']['id']
     leaf_rg_id = rg_got[0]['leaf-rg']['id']
@@ -118,26 +114,25 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
                 modified = True
                 break
         if modified:
-            my_logger.debug(f"{vni_count}/{total_vni} {vni=} -- updating")
+            logging.debug(f"{vni_count}/{total_vni} {vni=} -- updating")
             total_updated += 1
         elif leaf_found:
-            my_logger.debug(f"{vni_count}/{total_vni} {vni=} already in - skipping")
+            logging.debug(f"{vni_count}/{total_vni} {vni=} already in - skipping")
             total_skipped += 1
             continue
         else:
-            my_logger.warning(f"{vni_count}/{total_vni} {vni=} leaf_pair not found -- skipping")
+            logging.warning(f"{vni_count}/{total_vni} {vni=} leaf_pair not found -- skipping")
             total_leaf_missing += 1
             continue
 
         # endpoint would fail due to missing label
         del vn_spec['endpoints']
         vn_patched = the_bp.patch_virtual_network(vn_spec)
-        my_logger.debug(f"{vni_count}/{total_vni} {vni=}, {vn_patched=}")
+        logging.debug(f"{vni_count}/{total_vni} {vni=}, {vn_patched=}")
     
-    my_logger.info(f"{switch_label_pair=} {total_vni=}, {total_updated=}, {total_skipped=}, {total_leaf_missing=}")
+    logging.info(f"{switch_label_pair=} {total_vni=}, {total_updated=}, {total_skipped=}, {total_leaf_missing=}")
 
-def main(yaml_in_file):
-    order = ConsolidationOrder(yaml_in_file)
+def main(order):
 
     ########
     # assign virtual networks
@@ -148,6 +143,8 @@ def main(yaml_in_file):
 
 
 if __name__ == '__main__':
+    yaml_in_file = './tests/fixtures/config.yaml'
     log_level = logging.DEBUG
     prep_logging(log_level)
-    main('./tests/fixtures/config.yaml')    
+    order = ConsolidationOrder(yaml_in_file)
+    main(order)

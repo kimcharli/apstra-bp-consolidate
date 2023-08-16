@@ -12,6 +12,17 @@ def pretty_yaml(data: dict, label: str) -> None:
     print(f"==== {label}\n{yaml.dump(data)}\n====")
 
 
+class CkEnum:
+    MEMBER_SWITCH = 'member-switch'
+    MEMBER_INTERFACE = 'member-interface'
+    EVPN_INTERFACE = 'evpn-interface'
+    LINK = 'link'
+    TAG = 'tag'
+    GENERIC_SYSTEM = 'generic-system'
+    TAGGED_VLANS = 'tagged-vlans'
+    UNTAGGED_VLAN = 'untagged-vlan'
+    REDUNDANCY_GROUP = 'redundancy-group'    
+
 class CkApstraBlueprint:
 
     def __init__(self, session: CkApstraSession, label: str) -> None:
@@ -77,13 +88,8 @@ class CkApstraBlueprint:
             "query": query_candidate
         }
         response = self.session.session.post(url, json=payload)
-        # There were case of below. Attempted recovery by retrying, but it did not work.
-        # if response.status_code == 200 and response.raw.read() == b'':
-        #     time.sleep(3)
-        #     response = self.session.session.post(url, json=payload)
-        # should not check response.raw.read()
         if print_prefix or response.status_code != 200:
-            self.logger.warning(f"status_code != 200: {payload=}, {response.status_code=}, response.text={response.text}")
+            self.logger.warning(f"status_code {response.status_code} != 200: {payload=}, response.text={response.text}")
         # the content should have 'items'. otherwise, the query would be invalid
         elif 'items' not in response.json():
             self.logger.warning(f"items does not exist: {query_string=}, {response.text=}")
@@ -100,9 +106,10 @@ class CkApstraBlueprint:
                 self.system_label_2_id_cache[system_label]['device_profile_id'] = system_im['im']['device_profile_id']
         return system_im
 
-    def get_system_from_label(self, system_label) -> dict:
+    def get_system_node_from_label(self, system_label) -> dict:
         """
         Return the system dict from the system label
+        called from move_access_switch
         """
         # cache the id of the system_label if not already cached
         if system_label not in self.system_label_2_id_cache:
@@ -111,13 +118,14 @@ class CkApstraBlueprint:
             if len(system_query_result) == 0:
                 return None            
             id = system_query_result[0]['system']['id']
-            sn = system_query_result[0]['system']['system_id']
-            deploy_mode = system_query_result[0]['system']['deploy_mode']
-            self.system_label_2_id_cache[system_label] = { 
-                'id': id,
-                'sn': sn,
-                'deploy_mode': deploy_mode
-                }
+            # sn = system_query_result[0]['system']['system_id']
+            # deploy_mode = system_query_result[0]['system']['deploy_mode']
+            # self.system_label_2_id_cache[system_label] = { 
+            #     'id': id,
+            #     'sn': sn,
+            #     'deploy_mode': deploy_mode
+            #     }
+            self.system_label_2_id_cache[system_label] = system_query_result[0]['system']
             self.system_id_2_label_cache[id] = system_label
         return self.system_label_2_id_cache[system_label]
 
@@ -131,23 +139,25 @@ class CkApstraBlueprint:
 
     def get_server_interface_nodes(self, system_label, intf_name=None) -> str:
         """
-        Return interface nodes of the system label
-            return 'member' and 'switch', optionally 'ae' if it is a LAG
+        Return interface nodes of a system label
+            return CkEnum.MEMBER_INTERFACE and CkEnum.MEMBER_SWITCH
+                optionally CkEnum.EVPN_INTERFACE if it is a LAG
             It can be used for VLAN CT association
             TODO: implement intf_name in case of multiple link generic system
         TODO: cache generic system interface id
+        called by move_access_switch
         """
         interface_query = f"""
             match(
                 node('system', system_type='server', label='{system_label}')
                     .out().node('interface', name='gs_intf')
-                    .out().node('link', name='link')
-                    .in_().node('interface', name='member')
-                    .in_().node('system', system_type='switch', name='switch'),
+                    .out().node('link', name='{CkEnum.LINK}')
+                    .in_().node('interface', name='{CkEnum.MEMBER_INTERFACE}')
+                    .in_().node('system', system_type='switch', name='{CkEnum.MEMBER_SWITCH}'),
                 optional(
-                    node('interface', po_control_protocol='evpn', name='ae')
+                    node('interface', po_control_protocol='evpn', name='{CkEnum.EVPN_INTERFACE}')
                         .out().node('interface')
-                        .out().node(name='member')
+                        .out().node(name='{CkEnum.MEMBER_INTERFACE}')
                 )
             )
         """
@@ -156,25 +166,27 @@ class CkApstraBlueprint:
     def get_switch_interface_nodes(self, system_labels, intf_name=None) -> str:
         """
         Return interface nodes of the switches
-            return 'member' and 'switch', optionally 'ae' if it is a LAG
+            return CkEnum.MEMBER_INTERFACE and CkEnum.MEMBER_SWITCH
+                optionally CkEnum.EVPN_INTERFACE if it is a LAG
             It can be used for VLAN CT association
             TODO: implement intf_name in case of multiple link generic system
         TODO: cache generic system interface id
         """
         interface_query = f"""
             match(
-                node('system', system_type='server', name='generic')
-                    .out().node('interface', name='gs_intf')
-                    .out().node('link', name='link')
-                    .in_().node('interface', name='member')
-                    .in_().node('system', system_type='switch', label=is_in({system_labels}), name='switch'),
+                node('system', system_type='server', name='{CkEnum.GENERIC_SYSTEM}')
+                    .out('hosted_interfaces').node('interface', name='gs_intf')
+                    .out('link').node('link', name='{CkEnum.LINK}')
+                    .in_('link').node('interface', if_type='ethernet', name='{CkEnum.MEMBER_INTERFACE}')
+                    .in_('hosted_interfaces').node('system', system_type='switch', label=is_in({system_labels}), name='{CkEnum.MEMBER_SWITCH}'),
                 optional(
-                    node('interface', po_control_protocol='evpn', name='ae')
-                        .out().node('interface')
-                        .out().node(name='member')
+                    node('redundancy_group')
+                        .out('hosted_interfaces').node('interface', po_control_protocol='evpn', name='{CkEnum.EVPN_INTERFACE}')
+                        .out('composed_of').node('interface')
+                        .out('composed_of').node(name='{CkEnum.MEMBER_INTERFACE}')
                 ),
                 optional(
-                    node('tag', name='tag').out().node(name='link')
+                    node('tag', name='tag').out().node(name='{CkEnum.LINK}')
                     )
             )
         """
