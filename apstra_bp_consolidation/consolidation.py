@@ -98,26 +98,12 @@ def main(order):
 
     ########
     # create new generic systems
-    # generic system data: generic_system_label.link.dict
-    # TODO: make unique for the generic system label
     from move_generic_system import pull_generic_system_off_switch
     from move_generic_system import new_generic_systems
-    from move_generic_system import update_generic_systems_link_tag
-
 
     tor_generic_systems_data = pull_generic_system_off_switch(order.tor_bp, order.switch_label_pair)
-
-    # rename the generic system label
     access_switch_generic_systems_data = {order.rename_generic_system(old_label): data for old_label, data in tor_generic_systems_data.items()}
-
     new_generic_systems(order, access_switch_generic_systems_data)
-
-    # implemented in new_generic_systems
-    # update_generic_systems_lag(main_bp, switch_label_pair, generic_systems_data)
-
-    update_generic_systems_link_tag(order.main_bp, access_switch_generic_systems_data)
-
-
 
 
     ########

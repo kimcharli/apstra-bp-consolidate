@@ -88,7 +88,12 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
             'links': [],
             'new_systems': [],
         }
-        for _, link_data in generic_system_data.items():
+
+        # the link data has dependancy on the order
+        link_list = [ v for k, v in generic_system_data.items()]
+        for i in range(len(link_list)):
+        # for _, link_data in generic_system_data.items():
+            link_data = link_list[i]
             link_spec = {
                 'lag_mode': None,
                 'system': {
@@ -104,13 +109,13 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
                 old_aggregate_link_id = link_data['aggregate_link']
                 if old_aggregate_link_id not in lag_group:
                     lag_group[old_aggregate_link_id] = f"link{len(lag_group)+1}"
-                link_spec['lag_mode'] = 'lacp_active'
-                link_spec['group_label'] = lag_group[old_aggregate_link_id]
+                # link_spec['lag_mode'] = 'lacp_active' # this should not set in 4.1.2
+                # link_spec['group_label'] = lag_group[old_aggregate_link_id] # this should not exist in 4.1.2
             generic_system_spec['links'].append(link_spec)
         new_system = {
             'system_type': 'server',
             'label': generic_system_label,
-            'hostname': None, # hostname should not have '_' in it
+            # 'hostname': None, # hostname should not have '_' in it
             'port_channel_id_min': 0,
             'port_channel_id_max': 0,
             'logical_device': {
@@ -146,156 +151,60 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
         }
         generic_system_spec['new_systems'].append(new_system)
         ethernet_interfaces = [f"{main_bp.get_system_label(x['switch']['system_id'])}:{x['switch']['if_name']}" for x in generic_system_spec['links']]
-        logging.debug(f"adding {current_gs}/{total_gs} {generic_system_label} with {ethernet_interfaces} {len(lag_group)} LAG in the blueprint {main_bp.label}")
-        main_bp.add_generic_system(generic_system_spec)
+        logging.info(f"adding {current_gs}/{total_gs} {generic_system_label} with {ethernet_interfaces} {len(lag_group)} LAG in the blueprint {main_bp.label}")
+        generic_system_created = main_bp.add_generic_system(generic_system_spec)
+        logging.debug(f"generic_system_created: {generic_system_created}")
+
+        # update the lag mode
+        """
+        lag_spec example:
+            "links": {
+                "atl1tor-r5r14a<->_atl_rack_1_001_sys072(link-000000001)[1]": {
+                    "group_label": "link1",
+                    "lag_mode": "lacp_active"
+                },
+                "atl1tor-r5r14b<->_atl_rack_1_001_sys072(link-000000002)[1]": {
+                    "group_label": "link1",
+                    "lag_mode": "lacp_active"
+                }
+            }            
+        """
+        lag_spec = {
+            'links': {}
+        }
+
+        for i in range(len(link_list)):
+        # for _, link_data in generic_system_data.items():
+            link_data = link_list[i]
+            if 'aggregate_link' in link_data and link_data['aggregate_link']:
+                lag_spec['links'][generic_system_created[i]] = {
+                    'group_label': link_data['aggregate_link'],
+                    'lag_mode': 'lacp_active' }
+
+            # tag the link
+            if len(link_data['tags']):
+                tagged = main_bp.post_tagging([generic_system_created[i]], tags_to_add=link_data['tags'])
+                logging.debug(f"{tagged=}")
+
+        if len(lag_spec['links']):
+            lag_updated = main_bp.patch_leaf_server_link_labels(lag_spec)
+            logging.debug(f"lag_updated: {lag_updated}")
+
+
+
         current_gs += 1
-
-# generic system data: generic_system_label.link.dict
-def update_generic_systems_lag(main_bp, switch_label_pair, access_switch_generic_systems_data):
-    """
-    Update LAG mode for the new generic systems
-        <generic_system_label>:
-            <link_id>:
-                gs_if_name: None
-                sw_if_name: xe-0/0/15
-                sw_label: atl1tor-r5r14a
-                speed: 10G
-                aggregate_link: <aggregate_link_id>
-                tags: []
-                tagged_vlan: []
-                untagged_vlan: 
-
-    """
-    # pull the generic systems from the main blueprint
-    logging.debug(f"Updating LAG mode for the new generic systems in {main_bp.label} for {len(access_switch_generic_systems_data)} systems ====")
-    main_generic_system_data = pull_generic_system_off_switch(main_bp, switch_label_pair)
-
-    for tor_generic_label, tor_generic_data in access_switch_generic_systems_data.items():
-        lag_data = {}
-        lag_number = 1 # to create unique group_label per generic system
-        # group the links by the aggregate link
-        for _, link_data in tor_generic_data.items():
-            if 'aggregate_link' in link_data:
-                old_aggregate_link_id = link_data['aggregate_link']
-                if old_aggregate_link_id not in lag_data:
-                    lag_data[old_aggregate_link_id] = []
-                lag_data[old_aggregate_link_id].append(link_data)
-        # print(f"====== update_generic_systems_lag() lag_data created: {tor_generic_label} {lag_data=}")
-        # make lags under the generic system
-        for old_lag_id in lag_data.keys():
-            old_lag_data = lag_data[old_lag_id]
-            # print(f"====== update_generic_systems_lag() prep lag_spec: {tor_generic_label} {old_lag_id=} {old_lag_data=}")
-            """
-            lag_spec example:
-                "links": {
-                    "atl1tor-r5r14a<->_atl_rack_1_001_sys072(link-000000001)[1]": {
-                        "group_label": "link1",
-                        "lag_mode": "lacp_active"
-                    },
-                    "atl1tor-r5r14b<->_atl_rack_1_001_sys072(link-000000002)[1]": {
-                        "group_label": "link1",
-                        "lag_mode": "lacp_active"
-                    }
-                }            
-            """
-            lag_spec = {
-                'links': {}
-            }
-            for old_link_data in old_lag_data:
-                link_query = f"""
-                    node('system', label='{tor_generic_label}')
-                        .out().node('interface')
-                        .out().node('link', name='link')
-                        .in_().node('interface', if_name='{old_link_data['sw_if_name']}')
-                        .in_().node('system', label='{old_link_data['sw_label']}')
-                """
-                # print_prefix='link_query for lag'
-                print_prefix=None
-                link_data = main_bp.query(link_query, print_prefix=print_prefix, split=True)
-                if len(link_data) != 1:
-                    logging.warning(f"Wrong link_data for query: {link_query=}")
-                # skip if the link is already in the correct group_label
-                if link_data[0]['link']['group_label'] == f"link{lag_number}":
-                    logging.debug(f"link already in the correct LAG mode: {link_data[0]['link']['group_label']}")
-                    continue
-                link_id = link_data[0]['link']['id']
-                lag_spec['links'][link_id] = { 'group_label': f"link{lag_number}", 'lag_mode': 'lacp_active' }
-            
-            # print_prefix='lag_updating'
-            print_prefix=None
-            # update the lag if there are links to update
-            if len(lag_spec['links']):
-                link_members = [ f"{x['sw_label']}:{x['sw_if_name']}" for x in old_lag_data]
-                logging.debug(f"updating lag: {tor_generic_label} with {link_members}")
-                lag_updated = main_bp.patch_leaf_server_link_labels(lag_spec, print_prefix=print_prefix)
-                lag_number += 1
-
-
-    # for generec_system_label, generic_system in generic_systems_data.items():
-    #     lag_data = {} # group_label: [ links ]        
-    #     for link_label, link_data in { k: v for k, v in generic_system.items() if 'aggregate_link' in v }.items():
-    #         lag_data[link_data['aggregate_link']] = link_label
-    pass
-
-
-def update_generic_systems_link_tag(main_bp, access_switch_generic_systems_data):
-    """
-    Update tagging on the links towards the new generic systems
-        <generic_system_label>:
-            <link_id>:
-                gs_if_name: None
-                sw_if_name: xe-0/0/15
-                sw_label: atl1tor-r5r14a
-                speed: 10G
-                aggregate_link: <aggregate_link_id>
-                tags: []
-                tagged_vlan: []
-                untagged_vlan: 
-
-    """
-    logging.debug(f" Updating tagging for the new generic systems")
-    for generic_system_label, generic_system_data in access_switch_generic_systems_data.items():
-        for _, old_link_data in generic_system_data.items():
-            if len(old_link_data['tags']) == 0:
-                # no tag to update
-                continue
-            # the tag can be 'forceup'
-            tags = old_link_data['tags']
-            logging.debug(f"updating tag:  {tags=} on the link of {old_link_data['sw_label']}:{old_link_data['sw_if_name']}")
-            link_query = f"""
-                node('system', label='{generic_system_label}')
-                    .out().node('interface')
-                    .out().node('link', name='link')
-                    .in_().node('interface', if_name='{old_link_data['sw_if_name']}')
-                    .in_().node('system', label='{old_link_data['sw_label']}')
-            """
-            target_link_result = main_bp.query(link_query, multiline=True)
-            # logging.debug(f"{link_query=}, {target_link_result=}")
-            # print_prefix='link_query for tag'
-            print_prefix=None
-            tagged = main_bp.post_tagging([x['link']['id'] for x in target_link_result], tags_to_add=tags, print_prefix=print_prefix)
-
-
-
 
 
 def main(order):
 
     ########
     # create new generic systems
-    # generic system data: generic_system_label.link.dict
-    # TODO: make unique for the generic system label
     tor_generic_systems_data = pull_generic_system_off_switch(order.tor_bp, order.switch_label_pair)
 
     # rename the generic system label
     access_switch_generic_systems_data = {order.rename_generic_system(old_label): data for old_label, data in tor_generic_systems_data.items()}
 
     new_generic_systems(order, access_switch_generic_systems_data)
-
-    # implemented in new_generic_systems
-    # update_generic_systems_lag(main_bp, switch_label_pair, generic_systems_data)
-
-    update_generic_systems_link_tag(order.main_bp, access_switch_generic_systems_data)
 
 
 if __name__ == '__main__':

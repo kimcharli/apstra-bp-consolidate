@@ -138,14 +138,25 @@ class CkApstraSession:
         """
         throttle_seconds = 5
         patched = self.session.patch(url, json=spec, params=params)
-        while True:
-            # http 429 too many requests
-            if patched.status_code != 429:                
-                break
-            self.logger.info(f"sleeping {throttle_seconds} seconds due to: {patched.text}")
-            time.sleep(throttle_seconds)
-            patched = patched = self.session.patch(url, json=spec, params=params)
-        return patched.json()
+        try:
+            while True:
+                # http 429 too many requests
+                if patched.status_code != 429:                
+                    break
+                self.logger.info(f"sleeping {throttle_seconds} seconds due to: {patched.text}")
+                time.sleep(throttle_seconds)
+                patched = patched = self.session.patch(url, json=spec, params=params)
+                if patched.content:
+                    return patched.json()
+                else:
+                    return None
+            if patched.content:
+                return patched.json()
+            else:
+                return None
+        except Exception as e:
+            self.logger.error(f"{spec=}, {patched.content=} {e=}")
+            return None
 
     def print_token(self) -> None:
         """

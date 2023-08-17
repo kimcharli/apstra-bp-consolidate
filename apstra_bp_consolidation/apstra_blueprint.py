@@ -285,7 +285,7 @@ class CkApstraBlueprint:
         '''
         if print_prefix:
             self.logger.info(f"{print_prefix}: {spec=}")
-        return self.session.spatch_throttled(f"{self.url_prefix}/leaf-server-link-labels", spec=spec, params=params)
+        return self.session.patch_throttled(f"{self.url_prefix}/leaf-server-link-labels", spec=spec, params=params)
 
     def patch_node_single(self, node, patch_spec, params=None):
         '''
