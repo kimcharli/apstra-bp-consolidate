@@ -3,7 +3,7 @@
 import yaml
 import time
 import logging
-
+import uuid
 
 from apstra_session import CkApstraSession
 from apstra_session import prep_logging
@@ -404,6 +404,62 @@ class CkApstraBlueprint:
         """
         ct_list = [ x['batch']['id'] for x in self.query(ct_list_spec, multiline=True) ]
         return ct_list
+
+    def add_single_vlan_ct(self, vni: str, is_tagged: bool ) -> str:
+        '''
+        Create a single VLAN CT
+        '''
+        tagged_type = 'tagged' if is_tagged else 'untagged'
+        if is_tagged:
+            ct_label = f"vn{int(vni)-100000}"
+        else:
+            ct_label = f"vn{int(vni)-100000}-untagged"
+        uuid_batch = str(uuid.uuid4())
+        uuid_pipeline = str(uuid.uuid4())
+        uuid_vlan = str(uuid.uuid4())
+        vn_id = self.query(f"node('virtual_network', vn_id='{vni}', name='vn')")[0]['vn']['id']
+        policy_spec = {
+            "policies": [
+                {
+                    "description": f"Single VLAN Connectivity Template for VNI {vni}",
+                    "tags": [],
+                    "user_data": f"{{\"isSausage\":true,\"positions\":{{\"{uuid_vlan}\":[290,80,1]}}}}",
+                    "label": f"vn{int(vni)-100000}",
+                    "visible": True,
+                    "policy_type_name": "batch",
+                    "attributes": {
+                        "subpolicies": [ uuid_pipeline ]
+                    },
+                    "id": uuid_batch
+                },
+                {
+                    "description": "Add a single VLAN to interfaces, as tagged or untagged.",
+                    "label": "Virtual Network (Single)",
+                    "visible": False,
+                    "attributes": {
+                        "vn_node_id": vn_id,
+                        "tag_type": tagged_type
+                    },
+                    "policy_type_name": "AttachSingleVLAN",
+                    "id": uuid_vlan
+                },
+                {
+                    "description": "Add a single VLAN to interfaces, as tagged or untagged.",
+                    "label": "Virtual Network (Single) (pipeline)",
+                    "visible": False,
+                    "attributes": {
+                        "second_subpolicy": None,
+                        "first_subpolicy": uuid_vlan
+                    },
+                    "policy_type_name": "pipeline",
+                    "id": uuid_pipeline
+                }
+            ]
+        }
+        url = f"{self.url_prefix}/obj-policy-import"
+        result = self.session.session.put(url, json=policy_spec)
+        # it will be 204 with b''
+        return uuid_batch
 
     def revert(self):
         '''

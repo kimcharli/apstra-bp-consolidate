@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import logging
+import copy
+import uuid
 from typing import Any
 # from typing import List, Optional
 from pydantic import BaseModel
@@ -12,7 +14,7 @@ from consolidation import pretty_yaml
 from apstra_blueprint import CkEnum
 
 
-def pull_single_vlan_cts(the_bp, switch_label_pair: list) -> dict:
+def pull_interface_vlan_table(the_bp, switch_label_pair: list) -> dict:
     """
     Pull the single vlan cts for the switch pair
 
@@ -29,7 +31,7 @@ def pull_single_vlan_cts(the_bp, switch_label_pair: list) -> dict:
             member_interfaces:
                 <system_label>: [ <member if_name> ]   
     """
-    ct_table = {
+    interface_vlan_table = {
         # atl1tor-r5r14a:
         #     xe-0/0/0:
         #         id: <interface id>
@@ -45,17 +47,22 @@ def pull_single_vlan_cts(the_bp, switch_label_pair: list) -> dict:
 
     }
 
-    ct_query = f"""
+    INTERFACE_NODE = 'interface'
+    CT_NODE = 'batch'
+    SINGLE_VLAN_NODE = 'AttachSingleVLAN'
+    VN_NODE = 'virtual_network'
+
+    interface_vlan_query = f"""
         match(
-            node('ep_endpoint_policy', policy_type_name='batch', name='batch')
+            node('ep_endpoint_policy', policy_type_name='batch', name='{CT_NODE}')
                 .in_().node('ep_application_instance', name='ep_application_instance')
                 .out('ep_affected_by').node('ep_group')
-                .in_('ep_member_of').node(name='interface'),
+                .in_('ep_member_of').node(name='{INTERFACE_NODE}'),
             node(name='ep_application_instance')
-                .out('ep_nested').node('ep_endpoint_policy', policy_type_name='AttachSingleVLAN', name='AttachSingleVLAN')
+                .out('ep_nested').node('ep_endpoint_policy', policy_type_name='AttachSingleVLAN', name='{SINGLE_VLAN_NODE}')
                 .out('vn_to_attach').node('virtual_network', name='virtual_network'),
             optional(
-                node(name='interface')
+                node(name='{INTERFACE_NODE}')
                 .out('composed_of').node('interface')
                 .out('composed_of').node('interface', name='{CkEnum.MEMBER_INTERFACE}')
                 .in_('hosted_interfaces').node('system', label=is_in({switch_label_pair}), name='{CkEnum.MEMBER_SWITCH}' )
@@ -67,57 +74,61 @@ def pull_single_vlan_cts(the_bp, switch_label_pair: list) -> dict:
         )
     """
 
-    ct_nodes = the_bp.query(ct_query, multiline=True)
-    logging.debug(f"BP:{the_bp.label} {len(ct_nodes)=}")
+    interface_vlan_nodes = the_bp.query(interface_vlan_query, multiline=True)
+    logging.debug(f"BP:{the_bp.label} {len(interface_vlan_nodes)=}")
     # why so many (3172) entries?
 
-    for nodes in ct_nodes:
+    for nodes in interface_vlan_nodes:
         if nodes[CkEnum.MEMBER_INTERFACE]:
-            # AE interface
-            ae_id = nodes['interface']['id']
+            # INTERFACE_NODE is EVPN
+            evpn_id = nodes[INTERFACE_NODE]['id']
             system_label = nodes[CkEnum.MEMBER_SWITCH]['label']
             if_name = nodes[CkEnum.MEMBER_INTERFACE]['if_name']
             if if_name in ['et-0/0/48', 'et-0/0/49']:
                 # skip et-0/0/48 and et-0/0/49 which will be taken care of by Apstra
                 continue
-            vlan_id = int(nodes['virtual_network']['vn_id'] )- 100000
-            is_tagged = 'vlan_tagged' in nodes['AttachSingleVLAN']['attributes']
-            if ae_id not in ct_table[CkEnum.REDUNDANCY_GROUP]:
-                ct_table[CkEnum.REDUNDANCY_GROUP][ae_id] = {
+            vlan_id = int(nodes[VN_NODE]['vn_id'] )- 100000
+            is_tagged = 'vlan_tagged' in nodes[SINGLE_VLAN_NODE]['attributes']
+            if evpn_id not in interface_vlan_table[CkEnum.REDUNDANCY_GROUP]:
+                interface_vlan_table[CkEnum.REDUNDANCY_GROUP][evpn_id] = {
                     CkEnum.TAGGED_VLANS: [],
                     CkEnum.UNTAGGED_VLAN: None,
                     CkEnum.MEMBER_INTERFACE: {}
                 }
-            if system_label not in ct_table[CkEnum.REDUNDANCY_GROUP][ae_id][CkEnum.MEMBER_INTERFACE]:
-                ct_table[CkEnum.REDUNDANCY_GROUP][ae_id][CkEnum.MEMBER_INTERFACE][system_label] = []
-            if if_name not in ct_table[CkEnum.REDUNDANCY_GROUP][ae_id][CkEnum.MEMBER_INTERFACE][system_label]:
-                ct_table[CkEnum.REDUNDANCY_GROUP][ae_id][CkEnum.MEMBER_INTERFACE][system_label].append(if_name)
+            this_evpn_interface_data = interface_vlan_table[CkEnum.REDUNDANCY_GROUP][evpn_id]
+            if system_label not in this_evpn_interface_data[CkEnum.MEMBER_INTERFACE]:
+                this_evpn_interface_data[CkEnum.MEMBER_INTERFACE][system_label] = []
+            if if_name not in this_evpn_interface_data[CkEnum.MEMBER_INTERFACE][system_label]:
+                this_evpn_interface_data[CkEnum.MEMBER_INTERFACE][system_label].append(if_name)
             if is_tagged:
-                ct_table[CkEnum.REDUNDANCY_GROUP][ae_id][CkEnum.TAGGED_VLANS].append(vlan_id)
+                # add vlan_id if not already in the list
+                if vlan_id not in this_evpn_interface_data[CkEnum.TAGGED_VLANS]:
+                    this_evpn_interface_data[CkEnum.TAGGED_VLANS].append(vlan_id)
             else:
-                ct_table[CkEnum.REDUNDANCY_GROUP][ae_id][CkEnum.UNTAGGED_VLAN] = vlan_id
+                this_evpn_interface_data[CkEnum.UNTAGGED_VLAN] = vlan_id
         else:
             system_label = nodes['switch']['label']
             if_name = nodes['interface']['if_name']
             vlan_id = int(nodes['virtual_network']['vn_id'] )- 100000
-            is_tagged = 'vlan_tagged' in nodes['AttachSingleVLAN']['attributes']
-            if system_label not in ct_table:
-                ct_table[system_label] = {}
-            if if_name not in ct_table[system_label]:
-                ct_table[system_label][if_name] = {
+            is_tagged = 'vlan_tagged' in nodes[SINGLE_VLAN_NODE]['attributes']
+            if system_label not in interface_vlan_table:
+                interface_vlan_table[system_label] = {}
+            if if_name not in interface_vlan_table[system_label]:
+                interface_vlan_table[system_label][if_name] = {
                     'id': nodes['interface']['id'],
                     CkEnum.TAGGED_VLANS: [],
                     CkEnum.UNTAGGED_VLAN: None,
                 }
+            this_interface_data = interface_vlan_table[system_label][if_name]
             if is_tagged:
-                ct_table[system_label][if_name][CkEnum.TAGGED_VLANS].append(vlan_id)
+                this_interface_data[CkEnum.TAGGED_VLANS].append(vlan_id)
             else:
-                ct_table[system_label][if_name][CkEnum.UNTAGGED_VLAN] = vlan_id
+                this_interface_data[CkEnum.UNTAGGED_VLAN] = vlan_id
 
-    summary = [f"{x}:{len(ct_table[x])}" for x in ct_table.keys()]
+    summary = [f"{x}:{len(interface_vlan_table[x])}" for x in interface_vlan_table.keys()]
     logging.debug(f"BP:{the_bp.label} {summary=}")
 
-    return ct_table
+    return interface_vlan_table
 
 
 class VniCt:
@@ -125,7 +136,8 @@ class VniCt:
     tagged_id: str = None
     untagged_id: str = None
 
-    def __init__(self, vni: int = None):
+    def __init__(self, the_bp, vni: int = None):
+        self.bp = the_bp
         self.vni = vni
         self.tagged_id = None
         self.untagged_id = None
@@ -137,96 +149,154 @@ class VniCt:
         else:
             self.untagged_id = ct_id
     
-    def get_id(self, is_tagged: bool):
+    def get_id(self, is_tagged:bool = True):
         if is_tagged:
+            if self.tagged_id is None:
+                self.logger.warning(f"tagged_id is None")
+                self.tagged_id = self.bp.add_single_vlan_ct(self.vni, is_tagged)
+                self.logger.warning(f"{self.tagged_id=}")
             return self.tagged_id
         else:
             if self.untagged_id is None:
                 self.logger.warning(f"untagged_id is None")
+                self.untagged_id = self.bp.add_single_vlan_ct(self.vni, is_tagged)
+                self.logger.warning(f"{self.untagged_id=}")
             return self.untagged_id
+
+
+def get_vni_2_ct_id_table(the_bp) -> dict:
+    VN_NODE = 'virtual_network'
+    CT_NODE = 'batch'
+    SINGLE_VLAN_NODE = 'AttachSingleVLAN'
+
+    vni_2_ct_id_table = {}  # VniCt to find CT id from vni
     
-
-def associate_cts(the_bp, ct_table, switch_label_pair: list):
-    """
-    """
-    # switch_interface_nodes = the_bp.get_switch_interface_nodes(switch_label_pair)
-    vlan_2_ct_table = {}  # VniCt
-    interface_2_ct_id_table = {}  # to prep spec for assign: {<interface_id>: [ <ct_id> ]}
-
-
-    # build vlan_2_ct_table
+    # build vni_2_ct_table
     vlan_table_query = f"""
-        node('ep_endpoint_policy', policy_type_name='batch', name='batch')
+        node('ep_endpoint_policy', policy_type_name='batch', name='{CT_NODE}')
             .in_('ep_top_level').node('ep_application_instance')
-            .out('ep_nested').node('ep_endpoint_policy',policy_type_name='AttachSingleVLAN',name='AttachSingleVLAN')
-            .out('vn_to_attach').node('virtual_network', name='virtual_network')
+            .out('ep_nested').node('ep_endpoint_policy',policy_type_name='AttachSingleVLAN',name='{SINGLE_VLAN_NODE}')
+            .out('vn_to_attach').node('virtual_network', name='{VN_NODE}')
     """
     vlan_table_nodes = the_bp.query(vlan_table_query, multiline=True)
     for node in vlan_table_nodes:
-        vni = int(node['virtual_network']['vn_id'])
+        vni = int(node[VN_NODE]['vn_id'])
         vlan_id = vni - 100000
-        ct_id = node['batch']['id']
-        is_tagged = 'vlan_tagged' in node['AttachSingleVLAN']['attributes']
-        if vni not in vlan_2_ct_table:
-            vlan_2_ct_table[vlan_id] = VniCt(vni)
-        vlan_2_ct_table[vlan_id].set_id(ct_id, is_tagged)
-    # pretty_yaml(vlan_2_ct_table, "vlan_2_ct_table")
-    return
+        ct_id = node[CT_NODE]['id']
+        is_tagged = 'vlan_tagged' in node[SINGLE_VLAN_NODE]['attributes']
+        if vni not in vni_2_ct_id_table:
+            vni_2_ct_id_table[vni] = VniCt(the_bp, vni)
+        vni_2_ct_id_table[vni].set_id(ct_id, is_tagged)
+    # pretty_yaml(vni_2_ct_table, "vni_2_ct_table")
 
-    for system_label, system_data in ct_table.items():
-        # process AE interfaces first
-        if system_label == CkEnum.REDUNDANCY_GROUP:
-            for _, ae_data in system_data.items():
-                # find the evpn interface ID from the member switch interface
-                member_switch_label = list(ae_data[CkEnum.MEMBER_INTERFACE].keys())[0]
-                member_switch_if_name = ae_data[CkEnum.MEMBER_INTERFACE][member_switch_label][0]
-                ae_id = [x['id'] for x in switch_interface_nodes if x[CkEnum.EVPN_INTERFACE] and x[CkEnum.GENERIC_SYSTEM]['label'] == member_switch_label and x[CkEnum.MEMBER_INTERFACE]['if_name'] == member_switch_if_name][0]                
+    return vni_2_ct_id_table
+
+def update_interface_id(the_bp, interface_vlan_table, switch_label_pair: list) -> dict:
+    # deepcopy to avoid mutation
+    interface_id_vlan_table = copy.deepcopy(interface_vlan_table)
+
+    EVPN_INTERFACE_NODE = 'evpn-interface'
+    MEMBER_SWITCH_NODE = 'switch'
+    MEMBER_INTERFACE_NODE = 'member-interface'
+
+    interface_id_query = f"""
+        match(
+            node('system', label=is_in({list(interface_vlan_table.keys())}), name='{MEMBER_SWITCH_NODE}')
+                .out('hosted_interfaces').node('interface', if_type='ethernet', name='{MEMBER_INTERFACE_NODE}'),
+            optional(
+                node('interface', po_control_protocol='evpn', name='{EVPN_INTERFACE_NODE}')
+                    .out('composed_of').node('interface')
+                    .out('composed_of').node(name='{MEMBER_INTERFACE_NODE}')
+                )
+        )
+    """
+    interface_id_nodes_list = the_bp.query(interface_id_query, multiline=True)
+    for nodes in interface_id_nodes_list:
+        system_label = nodes[MEMBER_SWITCH_NODE]['label']
+        if_name = nodes[MEMBER_INTERFACE_NODE]['if_name']
+        if nodes[EVPN_INTERFACE_NODE]:
+            # the node is not null - it is an EVPN interface
+            evpn_id = nodes[EVPN_INTERFACE_NODE]['id']
+            # loop through the interface_vlan_table to update
+            for ae_id, ae_data in interface_id_vlan_table[CkEnum.REDUNDANCY_GROUP].items():
+                if system_label in ae_data[CkEnum.MEMBER_INTERFACE]:
+                    if if_name in ae_data[CkEnum.MEMBER_INTERFACE][system_label]:
+                        ae_data['id'] = evpn_id
+                        break
+        else:
+            # no EVPN_INTERFACE_NODE - non-LAG interface
+            if if_name in interface_vlan_table[system_label]:
+                # skip if the interface does not have vlan assignment
+                interface_id_vlan_table[system_label][if_name]['id'] = nodes[MEMBER_INTERFACE_NODE]['id']
+    return interface_id_vlan_table
+
+
+def associate_cts(the_bp, interface_vlan_table, switch_label_pair: list):
+    """
+    """
+    # switch_interface_nodes = the_bp.get_switch_interface_nodes(switch_label_pair)
+    vni_2_ct_id_table = get_vni_2_ct_id_table(the_bp)
+    pretty_yaml(vni_2_ct_id_table, "vni_2_ct_id_table")
+
+    interface_id_vlan_table = update_interface_id(the_bp, interface_vlan_table, switch_label_pair)
+    # pretty_yaml(interface_id_vlan_table, "interface_id_vlan_table")
+
+
+    """
+    <system_label>:
+        <if_name>:
+            id: <interface id>
+            tagged_vlans: []
+            untagged_vlan: None
+    redundacy_group:
+        <tor_ae_id>:
+            id: <ae_id>
+            tagged_vlans: []
+            untagged_vlan: None
+            member_interfaces:
+                <system_label>: [ <member if_name> ]   
+    """
+
+    for system_label, system_data in interface_id_vlan_table.items():
+        for intf_label, intf_data in system_data.items():
+            interface_id = intf_data['id']
+            logging.debug(f"{system_label=}, {intf_label=}, {interface_id=}, {intf_data[CkEnum.TAGGED_VLANS]=}")
+            # ct_id_list = [ vni_2_ct_id_table[100000+x].get_id() for x in intf_data[CkEnum.TAGGED_VLANS] ]
+            ct_id_list = []
+            for i in intf_data[CkEnum.TAGGED_VLANS]:
+                # logging.debug(f"{i=}, {vni_2_ct_id_table[100000+i]=}")
+                ct_id_list.append(vni_2_ct_id_table[100000+i].get_id())
+            # ct_id_list = [ vni_2_ct_id_table[100000+x].get_id() for x in intf_data[CkEnum.TAGGED_VLANS] ]
+            if intf_data[CkEnum.UNTAGGED_VLAN]:
+                # if untagged vlan is configure
+                ct_id_list.append(vni_2_ct_id_table[100000+intf_data[CkEnum.UNTAGGED_VLAN]].get_id(False))
+
+            while len(ct_id_list) > 0:
+                throttle_number = 50
+                cts_chunk = ct_id_list[:throttle_number]
+                logging.debug(f"Adding Connecitivity Templates on this links: {len(cts_chunk)=}")
+                batch_ct_spec = {
+                    "operations": [
+                        {
+                            "path": "/obj-policy-batch-apply",
+                            "method": "PATCH",
+                            "payload": {
+                                "application_points": [
+                                    {
+                                        "id": interface_id,
+                                        "policies": [ {"policy": x, "used": True} for x in cts_chunk]
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+                batch_result = order.main_bp.batch(batch_ct_spec, params={"comment": "batch-api"})
+                del ct_id_list[:throttle_number]
+        
 
 
 
-
-
-
-
-
-    # logging.debug(f"associating cts, {len(tor_ct[REDUNDANCY_GROUP])=}, {len(main_ct[REDUNDANCY_GROUP])=}")
-    # for system_label, system_data in tor_ct.items():
-    #     if system_label not in main_ct:
-    #         # no CT on main_ct
-    #         logging.debug(f"BP {the_bp.label} had no CT on {system_label}")
-    #         main_ct[system_label] = {}
-    #         #     'tagged_vlans': [],
-    #         #     'untagged_vlan': None
-    #         # }
-    #     for if_name, if_data in system_data.items():
-    #         # lag interface
-    #         if system_label == REDUNDANCY_GROUP:
-    #             pass
-    #         # non-lag interface
-    #         else:
-    #             if if_name not in main_ct[system_label]:
-    #                 logging.debug(f"adding: {system_label=}, {if_name=}")
-    #                 main_ct[system_label][if_name] = {
-    #                     TAGGED_VLANS: [],
-    #                     UNTAGGED_VLAN: None
-    #                 }
-    #             tagged_vlans = [x for x in if_data[TAGGED_VLANS] if x not in main_ct[system_label][if_name][TAGGED_VLANS]]
-    #             untagged_vlan = if_data[UNTAGGED_VLAN]
-    #             if untagged_vlan or len(tagged_vlans):
-    #                 logging.debug(f"{system_label=}, {if_name=}, {tagged_vlans=}, {untagged_vlan=}")
-    #                 application_point = the_bp.query(f"node('system', label='{system_label}').out().node('interface', if_name='{if_name}', name='interface')")[0]['interface']['id']
-    #                 (_, untagged_id) = the_bp.get_single_vlan_ct_id(100000+untagged_vlan)
-    #                 attach_spec = {
-    #                     'application_points': [{
-    #                         'id': application_point,
-    #                         'policies': [{
-    #                             'policy': untagged_id,
-    #                             'used': True
-    #                         }]
-    #                     }]
-    #                 }
-    #                 logging.debug(f"{attach_spec=}")
-    #                 the_bp.patch_obj_policy_batch_apply(attach_spec, params={'aync': 'full'})
 
 
 def main(order):
@@ -234,23 +304,10 @@ def main(order):
     ########
     # pull CT assignment data
 
-    # q1
-    # f"node('ep_endpoint_policy', name='ep', label='{ct_label}').out('ep_subpolicy').node().out('ep_first_subpolicy').node(name='n2')"
-    # vn_endpoint_query = f"node('system', label='{system_label}').out('hosted_vn_instances').node('vn_instance').out('instantiates').node('virtual_network', label='{vn_label}').out('member_endpoints').node('vn_endpoint', name='vn_endpoint')"
-    # get_ae_or_interface_id(ct_dict['system'], ct_dict['interface'])
-    # node('virtual_network', name='virtual_network').out().node('vn_endpoint', name='vn_endpoint').in_().node('interface', name='interface').in_().node('system', name='system')
+    interface_vlan_table = pull_interface_vlan_table(order.tor_bp, order.switch_label_pair)
+    pretty_yaml(interface_vlan_table, "interface_vlan_table")
 
-    tor_cts = pull_single_vlan_cts(order.tor_bp, order.switch_label_pair)
-    pretty_yaml(tor_cts, "tor_cts")
-
-    # main_cts = pull_single_vlan_cts(order.main_bp, order.switch_label_pair)
-    # pretty_yaml(main_cts, "main_cts")
-
-    # switch_interface_nodes = order.main_bp.get_switch_interface_nodes(order.switch_label_pair)
-
-    # work_cts = diff_single_vlan_cts(tor_cts, main_cts, switch_interface_nodes)
-
-    associate_cts(order.main_bp, tor_cts, order.switch_label_pair)
+    associate_cts(order.main_bp, interface_vlan_table, order.switch_label_pair)
 
 
 if __name__ == '__main__':
