@@ -236,7 +236,7 @@ def associate_cts(the_bp, interface_vlan_table, switch_label_pair: list):
     """
     # switch_interface_nodes = the_bp.get_switch_interface_nodes(switch_label_pair)
     vni_2_ct_id_table = get_vni_2_ct_id_table(the_bp)
-    pretty_yaml(vni_2_ct_id_table, "vni_2_ct_id_table")
+    # pretty_yaml(vni_2_ct_id_table, "vni_2_ct_id_table")
 
     interface_id_vlan_table = update_interface_id(the_bp, interface_vlan_table, switch_label_pair)
     # pretty_yaml(interface_id_vlan_table, "interface_id_vlan_table")
@@ -260,8 +260,7 @@ def associate_cts(the_bp, interface_vlan_table, switch_label_pair: list):
     for system_label, system_data in interface_id_vlan_table.items():
         for intf_label, intf_data in system_data.items():
             interface_id = intf_data['id']
-            logging.debug(f"{system_label=}, {intf_label=}, {interface_id=}, {intf_data[CkEnum.TAGGED_VLANS]=}")
-            # ct_id_list = [ vni_2_ct_id_table[100000+x].get_id() for x in intf_data[CkEnum.TAGGED_VLANS] ]
+            # logging.debug(f"{system_label=}, {intf_label=}, {interface_id=}, {intf_data[CkEnum.TAGGED_VLANS]=}")
             ct_id_list = []
             for i in intf_data[CkEnum.TAGGED_VLANS]:
                 # logging.debug(f"{i=}, {vni_2_ct_id_table[100000+i]=}")
@@ -274,7 +273,7 @@ def associate_cts(the_bp, interface_vlan_table, switch_label_pair: list):
             while len(ct_id_list) > 0:
                 throttle_number = 50
                 cts_chunk = ct_id_list[:throttle_number]
-                logging.debug(f"Adding Connecitivity Templates on this links: {len(cts_chunk)=}")
+                # logging.debug(f"Adding Connecitivity Templates on this links: {len(cts_chunk)=}")
                 batch_ct_spec = {
                     "operations": [
                         {
@@ -305,7 +304,7 @@ def main(order):
     # pull CT assignment data
 
     interface_vlan_table = pull_interface_vlan_table(order.tor_bp, order.switch_label_pair)
-    pretty_yaml(interface_vlan_table, "interface_vlan_table")
+    # pretty_yaml(interface_vlan_table, "interface_vlan_table")
 
     associate_cts(order.main_bp, interface_vlan_table, order.switch_label_pair)
 
