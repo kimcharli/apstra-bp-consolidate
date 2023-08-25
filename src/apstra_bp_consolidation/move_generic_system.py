@@ -2,10 +2,11 @@
 
 import json
 import logging
+import click
 
-from consolidation import prep_logging
-from consolidation import ConsolidationOrder
-from apstra_blueprint import CkEnum
+from apstra_bp_consolidation.consolidation import prep_logging
+from apstra_bp_consolidation.consolidation import ConsolidationOrder
+from apstra_bp_consolidation.apstra_blueprint import CkEnum
 
 
 def pull_generic_system_off_switch(the_bp, switch_label_pair: list) -> dict:
@@ -195,6 +196,11 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
         current_gs += 1
 
 
+@click.command(name='move-generic-systems')
+def click_move_generic_systems():
+    order = ConsolidationOrder()
+    main(order)
+
 def main(order):
 
     ########
@@ -208,10 +214,7 @@ def main(order):
 
 
 if __name__ == '__main__':
-    yaml_in_file = './tests/fixtures/config.yaml'
-    log_level = logging.DEBUG
-    prep_logging(log_level)
-    order = ConsolidationOrder(yaml_in_file)
+    order = ConsolidationOrder()
     main(order)
 
 

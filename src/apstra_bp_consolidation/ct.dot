@@ -17,7 +17,7 @@ digraph {
     
     RACK [label="rack", pos = "0,0!"]
     RG [label="redundancy_group", fillcolor="green"]
-    Switch [label="{system | system_type=switch}"]
+    Switch [label="{system | label=atl1tor-r5r14b | system_type=switch}"]
     IF_evpn [label="{interface | if_type=port_channel | po_control_protocol=evpn}", fillcolor="orange", penwidth=3]
     IF_eth [label="{interface | if_type=ethernet}", fillcolor="orange", penwidth=3]
     IF_member [label="{interface | if_type=ethernet}"]
@@ -27,15 +27,15 @@ digraph {
     LINK_member [label="link"]
     IF_GS_PC [label="{interface | GS/PC }"]
     SS [label="{ system | system_type=server}"]
-    VN [label="virtual_network", fillcolor="green"]
+    VN [label="{virtual_network | vn_id=100121}", fillcolor="green"]
     VE [label="vn_endpoint", fillcolor="green"]
-    VI [label="vn_instance", fillcolor="green"]
+    VI [label="{vn_instance | vlan_id=121}", fillcolor="green"]
     SZ [label="security_zone"]
 
     RG -> RACK [label="part_of_rack"]
     RG ->Switch [label="composed_of_systems"]
     RG -> IF_evpn [label="hosted_interfaces"]
-    Switch -> VI [label="instantiated_by"]
+    Switch -> VI [label="hosted_vn_instances"]
 
     IF_eth -> EG [label="ep_member_of", color="red", penwidth=3, headlabel="1", taillabel="*"]
     IF_evpn -> EG [label="ep_member_of", color="red", penwidth=3, headlabel="1", taillabel="*"]

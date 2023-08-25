@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 
 import logging
+import click
 
-from consolidation import ConsolidationOrder
-from consolidation import prep_logging
+from apstra_bp_consolidation.consolidation import ConsolidationOrder
 
-def move_device(order):
+@click.command(name='move-devices')
+def click_move_devices():
+    order = ConsolidationOrder()
+    move_devices(order)
+
+
+def move_devices(order):
     ########
     # 
     system_snapshot = {} # label: sn
@@ -46,13 +52,6 @@ def move_device(order):
     # add_device_to_bp(order.main_bp, order.switch_label_pair)
 
 
-def main(order):
-    move_device(order)
-
-
 if __name__ == '__main__':
-    yaml_in_file = './tests/fixtures/config.yaml'
-    log_level = logging.DEBUG
-    prep_logging(log_level)
-    order = ConsolidationOrder(yaml_in_file)
-    main(order)
+    order = ConsolidationOrder()
+    move_devices(order)

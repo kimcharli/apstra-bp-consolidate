@@ -3,11 +3,12 @@
 import json
 import time
 import copy
-import yaml
+# import yaml
+import click
 from datetime import datetime
 import logging
 
-from apstra_session import CkApstraSession
+from apstra_bp_consolidation.apstra_session import CkApstraSession
 from apstra_bp_consolidation.apstra_blueprint import CkApstraBlueprint
 from apstra_bp_consolidation.apstra_session import prep_logging
 
@@ -22,8 +23,21 @@ class ConsolidationOrder:
     # tor_label
     # switch_label_pair
 
-    def __init__(self, yaml_in_file):
-        # import yaml
+    def __init__(self, env_file_input: str = None):
+        """
+        Build the consolidation order object from the env file path
+        """
+        import yaml
+        import os
+        from dotenv import load_dotenv
+
+        env_file = env_file_input or 'tests/fixtures/.env'
+
+        load_dotenv(env_file)
+        yaml_in_file = os.getenv('yaml_in_file')
+        log_level = os.getenv('logging_level')
+        prep_logging(log_level)
+        # order = ConsolidationOrder(yaml_in_file)
 
         self.yaml_in_file = yaml_in_file
         with open(yaml_in_file, 'r') as file:
@@ -67,8 +81,22 @@ def pretty_yaml(data: dict, label: str) -> None:
 
 
 
-def main(order):
- 
+def main():
+    print("Running as main")
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv("tests/fixtures/.env")
+    yaml_in_file = os.getenv('yaml_in_file')
+    log_level = os.getenv('logging_level')
+
+    prep_logging(log_level)
+    order = ConsolidationOrder(yaml_in_file)
+    # main(order)
+
+
+
+    return
     # revert any staged changes
     # main_bp.revert()
     # tor_bp.revert()
@@ -138,12 +166,39 @@ def main(order):
     move_device(order)
 
 
+@click.group()
+# @click.option('--log-level', envvar='logging_level', help='The logging level')
+# @click.pass_context
+# def cli(ctx, log_level):
+def cli():
+    pass
+
+    # click.echo('Running as cli')
+    # print("Running as main")
+    # import os
+    # from dotenv import load_dotenv
+
+    # load_dotenv("tests/fixtures/.env")
+    # yaml_in_file = os.getenv('yaml_in_file')
+    # log_level = os.getenv('logging_level')
+
+    # prep_logging(log_level)
+    # order = ConsolidationOrder(yaml_in_file)
+    # apstra_helper(obj=order)
+
+from apstra_bp_consolidation.move_access_switch import click_move_access_switch
+from apstra_bp_consolidation.move_generic_system import click_move_generic_systems
+from apstra_bp_consolidation.move_vn import click_move_virtual_networks
+from apstra_bp_consolidation.move_ct import click_move_cts
+from apstra_bp_consolidation.move_device import click_move_devices
+
+cli.add_command(click_move_generic_systems)
+cli.add_command(click_move_access_switch)
+cli.add_command(click_move_virtual_networks)
+cli.add_command(click_move_cts)
+cli.add_command(click_move_devices)
 
 if __name__ == "__main__":
-    yaml_in_file = './tests/fixtures/config.yaml'
-    log_level = logging.DEBUG
-    prep_logging(log_level)
-    order = ConsolidationOrder(yaml_in_file)
-    main(order)
+    main()
 
 

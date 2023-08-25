@@ -7,11 +7,11 @@ from typing import Any
 # from typing import List, Optional
 from pydantic import BaseModel
 
-from consolidation import ConsolidationOrder
-from consolidation import prep_logging
-from consolidation import pretty_yaml
+from apstra_bp_consolidation.consolidation import ConsolidationOrder
+# from consolidation import prep_logging
+# from consolidation import pretty_yaml
 
-from apstra_blueprint import CkEnum
+from apstra_bp_consolidation.apstra_blueprint import CkEnum
 
 
 def pull_interface_vlan_table(the_bp, switch_label_pair: list) -> dict:
@@ -290,11 +290,15 @@ def associate_cts(the_bp, interface_vlan_table, switch_label_pair: list):
                         }
                     ]
                 }
-                batch_result = order.main_bp.batch(batch_ct_spec, params={"comment": "batch-api"})
+                batch_result = the_bp.batch(batch_ct_spec, params={"comment": "batch-api"})
                 del ct_id_list[:throttle_number]
         
 
-
+import click
+@click.command(name='move-cts')
+def click_move_cts():
+    order = ConsolidationOrder()
+    main(order)
 
 
 
@@ -310,8 +314,5 @@ def main(order):
 
 
 if __name__ == '__main__':
-    yaml_in_file = './tests/fixtures/config.yaml'
-    log_level = logging.DEBUG
-    prep_logging(log_level)
-    order = ConsolidationOrder(yaml_in_file)
+    order = ConsolidationOrder()
     main(order)

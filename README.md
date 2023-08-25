@@ -11,6 +11,11 @@ ckim@ckim-mbp apstra-bp-consolidate % source .venv/bin/activate
 ```
 
 
+## run command
+```
+logging_level=INFO consolidation-helper move-virtual-networks 
+```
+
 
 ## venv for tox and build
 

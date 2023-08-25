@@ -25,14 +25,14 @@ class CustomFormatter(logging.Formatter):
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
 
-def prep_logging(log_level=logging.INFO):
+def prep_logging(log_level: str = 'INFO'):
     '''Configure logging options'''
     timestamp = datetime.now().strftime("%Y%m%d-%H:%H:%S")
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
 
     ch = logging.StreamHandler()
-    ch.setLevel(log_level)
+    ch.setLevel(logging.getLevelName(log_level))
     ch.setFormatter(CustomFormatter())
     root.addHandler(ch)
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 
-import yaml
+# import yaml
 import time
 import logging
 import uuid
 
-from apstra_session import CkApstraSession
-from apstra_session import prep_logging
+from apstra_bp_consolidation.apstra_session import CkApstraSession
+from apstra_bp_consolidation.apstra_session import prep_logging
 
-def pretty_yaml(data: dict, label: str) -> None:
-    print(f"==== {label}\n{yaml.dump(data)}\n====")
+# def pretty_yaml(data: dict, label: str) -> None:
+#     print(f"==== {label}\n{yaml.dump(data)}\n====")
 
 
 class CkEnum:

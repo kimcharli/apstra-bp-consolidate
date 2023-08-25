@@ -3,10 +3,11 @@
 import json
 import time
 import logging
+import click
 
-from consolidation import ConsolidationOrder
-from consolidation import prep_logging
-from apstra_blueprint import CkEnum
+from apstra_bp_consolidation.consolidation import ConsolidationOrder
+from apstra_bp_consolidation.consolidation import prep_logging
+from apstra_bp_consolidation.apstra_blueprint import CkEnum
 
 def build_access_switch_fabric_links_dict(links_dict:dict) -> dict:
     '''
@@ -198,6 +199,11 @@ def get_tor_ae_id_in_main(tor_interface_nodes_in_main, tor_name):
     return tor_interface_nodes_in_main[0][CkEnum.EVPN_INTERFACE]['id']
 
 
+@click.command(name='move-access-switch')
+def click_move_access_switch():    
+    order = ConsolidationOrder()
+    main(order)
+
 def main(order):
 
     tor_name = order.config['blueprint']['tor']['torname']
@@ -213,9 +219,6 @@ def main(order):
     create_new_access_switch_pair(order, switch_pair_spec)
 
 if __name__ == '__main__':
-    yaml_in_file = './tests/fixtures/config.yaml'
-    log_level = logging.DEBUG
-    prep_logging(log_level)
-    order = ConsolidationOrder(yaml_in_file)
+    order = ConsolidationOrder()
     main(order)
 

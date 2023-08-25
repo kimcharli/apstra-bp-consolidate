@@ -3,8 +3,8 @@
 import json
 import logging
 
-from consolidation import prep_logging
-from consolidation import ConsolidationOrder
+# from consolidation import prep_logging
+from apstra_bp_consolidation.consolidation import ConsolidationOrder
 
 # keeping here to use later
 def deep_diff(dict1, dict2, path=""):
@@ -128,9 +128,16 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
         # endpoint would fail due to missing label
         del vn_spec['endpoints']
         vn_patched = the_bp.patch_virtual_network(vn_spec)
-        logging.debug(f"{vni_count}/{total_vni} {vni=}, {vn_patched=}")
+        logging.info(f"{vni_count}/{total_vni} {vni=}, {vn_patched=}")
     
     logging.info(f"{switch_label_pair=} {total_vni=}, {total_updated=}, {total_skipped=}, {total_leaf_missing=}")
+
+
+import click
+@click.command(name='move-virtual-networks')
+def click_move_virtual_networks():
+    order = ConsolidationOrder()
+    main(order)
 
 def main(order):
 
@@ -143,8 +150,5 @@ def main(order):
 
 
 if __name__ == '__main__':
-    yaml_in_file = './tests/fixtures/config.yaml'
-    log_level = logging.DEBUG
-    prep_logging(log_level)
-    order = ConsolidationOrder(yaml_in_file)
+    order = ConsolidationOrder()
     main(order)
