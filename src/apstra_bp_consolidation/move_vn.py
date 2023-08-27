@@ -3,7 +3,6 @@
 import json
 import logging
 
-# from consolidation import prep_logging
 from apstra_bp_consolidation.consolidation import ConsolidationOrder
 
 # keeping here to use later
@@ -137,10 +136,10 @@ import click
 @click.command(name='move-virtual-networks')
 def click_move_virtual_networks():
     order = ConsolidationOrder()
-    main(order)
+    order_move_virtual_networks(order)
 
-def main(order):
-
+def order_move_virtual_networks(order):
+    logging.info(f"======== Moving Virtual Networks for {order.switch_label_pair} from {order.tor_bp.label} to {order.main_bp.label}")
     ########
     # assign virtual networks
     vni_list = pull_vni_ids(order.tor_bp, order.switch_label_pair)
@@ -151,4 +150,4 @@ def main(order):
 
 if __name__ == '__main__':
     order = ConsolidationOrder()
-    main(order)
+    order_move_virtual_networks(order)

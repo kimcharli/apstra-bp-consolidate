@@ -8,8 +8,6 @@ from typing import Any
 from pydantic import BaseModel
 
 from apstra_bp_consolidation.consolidation import ConsolidationOrder
-# from consolidation import prep_logging
-# from consolidation import pretty_yaml
 
 from apstra_bp_consolidation.apstra_blueprint import CkEnum
 
@@ -298,12 +296,12 @@ import click
 @click.command(name='move-cts')
 def click_move_cts():
     order = ConsolidationOrder()
-    main(order)
+    order_move_cts(order)
 
 
 
-def main(order):
-
+def order_move_cts(order):
+    logging.info(f"======== Moving Connectivity Templated for {order.switch_label_pair} from {order.tor_bp.label} to {order.main_bp.label}")
     ########
     # pull CT assignment data
 
@@ -315,4 +313,4 @@ def main(order):
 
 if __name__ == '__main__':
     order = ConsolidationOrder()
-    main(order)
+    order_move_cts(order)

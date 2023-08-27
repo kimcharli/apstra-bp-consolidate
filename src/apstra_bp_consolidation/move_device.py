@@ -8,10 +8,11 @@ from apstra_bp_consolidation.consolidation import ConsolidationOrder
 @click.command(name='move-devices')
 def click_move_devices():
     order = ConsolidationOrder()
-    move_devices(order)
+    order_move_devices(order)
 
 
-def move_devices(order):
+def order_move_devices(order):
+    logging.info(f"======== Moving Devices for {order.switch_label_pair} from {order.tor_bp.label} to {order.main_bp.label}")
     ########
     # 
     system_snapshot = {} # label: sn
@@ -54,4 +55,4 @@ def move_devices(order):
 
 if __name__ == '__main__':
     order = ConsolidationOrder()
-    move_devices(order)
+    order_move_devices(order)

@@ -126,8 +126,6 @@ def create_new_access_switch_pair(order, switch_pair_spec):
     ########
     # create new access system pair
     # olg logical device is not useful anymore
-    # logical_device_list = tor_bp.query("node('system', name='system', role=not_in(['generic'])).out().node('logical_device', name='ld')")
-    # logical_device_id = logical_device_list[0]['ld']['id']
 
     # LD _ATL-AS-Q5100-48T, _ATL-AS-5120-48T created
     # IM _ATL-AS-Q5100-48T, _ATL-AS-5120-48T created
@@ -199,12 +197,13 @@ def get_tor_ae_id_in_main(tor_interface_nodes_in_main, tor_name):
     return tor_interface_nodes_in_main[0][CkEnum.EVPN_INTERFACE]['id']
 
 
-@click.command(name='move-access-switch')
-def click_move_access_switch():    
+@click.command(name='move-access-switches')
+def click_move_access_switches():    
     order = ConsolidationOrder()
-    main(order)
+    order_move_access_switches(order)
 
-def main(order):
+def order_move_access_switches(order):
+    logging.info(f"======== Moving Access Switches for {order.switch_label_pair} from {order.tor_bp.label} to {order.main_bp.label}")
 
     tor_name = order.config['blueprint']['tor']['torname']
 
@@ -220,5 +219,5 @@ def main(order):
 
 if __name__ == '__main__':
     order = ConsolidationOrder()
-    main(order)
+    order_move_access_switches(order)
 

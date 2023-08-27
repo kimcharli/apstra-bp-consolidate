@@ -4,7 +4,6 @@ import json
 import logging
 import click
 
-from apstra_bp_consolidation.consolidation import prep_logging
 from apstra_bp_consolidation.consolidation import ConsolidationOrder
 from apstra_bp_consolidation.apstra_blueprint import CkEnum
 
@@ -199,9 +198,10 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
 @click.command(name='move-generic-systems')
 def click_move_generic_systems():
     order = ConsolidationOrder()
-    main(order)
+    order_move_generic_systems(order)
 
-def main(order):
+def order_move_generic_systems(order):
+    logging.info(f"======== Moving Generic Systems for {order.switch_label_pair} from {order.tor_bp.label} to {order.main_bp.label}")
 
     ########
     # create new generic systems
@@ -215,6 +215,6 @@ def main(order):
 
 if __name__ == '__main__':
     order = ConsolidationOrder()
-    main(order)
+    order_move_generic_systems(order)
 
 
