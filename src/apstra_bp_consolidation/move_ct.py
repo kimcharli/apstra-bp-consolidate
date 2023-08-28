@@ -130,6 +130,11 @@ def pull_interface_vlan_table(the_bp, switch_label_pair: list) -> dict:
 
 
 class VniCt:
+    """
+    vni: int
+    tagged_id: <id of tagged CT>
+    untagged_id: <id of untagged CT>
+    """
     vni: int = None
     tagged_id: str = None
     untagged_id: str = None
@@ -163,6 +168,13 @@ class VniCt:
 
 
 def get_vni_2_ct_id_table(the_bp) -> dict:
+    """
+    Build a VNI to CT table of the blueprint
+
+    Return: dict {
+        <vni>: { vni: <vni>, tagged_id: <id of tagged CT>, untagged_id: <id of untagged CT> }
+    }
+    """
     VN_NODE = 'virtual_network'
     CT_NODE = 'batch'
     SINGLE_VLAN_NODE = 'AttachSingleVLAN'
@@ -170,22 +182,21 @@ def get_vni_2_ct_id_table(the_bp) -> dict:
     vni_2_ct_id_table = {}  # VniCt to find CT id from vni
     
     # build vni_2_ct_table
+    # should pick all the VNs regradless of attached or not
     vlan_table_query = f"""
         node('ep_endpoint_policy', policy_type_name='batch', name='{CT_NODE}')
-            .in_('ep_top_level').node('ep_application_instance')
-            .out('ep_nested').node('ep_endpoint_policy',policy_type_name='AttachSingleVLAN',name='{SINGLE_VLAN_NODE}')
+            .out('ep_subpolicy').node('ep_endpoint_policy')
+            .out('ep_first_subpolicy').node('ep_endpoint_policy',policy_type_name='AttachSingleVLAN',name='{SINGLE_VLAN_NODE}')
             .out('vn_to_attach').node('virtual_network', name='{VN_NODE}')
     """
     vlan_table_nodes = the_bp.query(vlan_table_query, multiline=True)
     for node in vlan_table_nodes:
         vni = int(node[VN_NODE]['vn_id'])
-        vlan_id = vni - 100000
         ct_id = node[CT_NODE]['id']
         is_tagged = 'vlan_tagged' in node[SINGLE_VLAN_NODE]['attributes']
         if vni not in vni_2_ct_id_table:
             vni_2_ct_id_table[vni] = VniCt(the_bp, vni)
         vni_2_ct_id_table[vni].set_id(ct_id, is_tagged)
-    # pretty_yaml(vni_2_ct_table, "vni_2_ct_table")
 
     return vni_2_ct_id_table
 
@@ -234,6 +245,7 @@ def associate_cts(the_bp, interface_vlan_table, switch_label_pair: list):
     """
     # switch_interface_nodes = the_bp.get_switch_interface_nodes(switch_label_pair)
     vni_2_ct_id_table = get_vni_2_ct_id_table(the_bp)
+    # from apstra_bp_consolidation.consolidation import pretty_yaml
     # pretty_yaml(vni_2_ct_id_table, "vni_2_ct_id_table")
 
     interface_id_vlan_table = update_interface_id(the_bp, interface_vlan_table, switch_label_pair)

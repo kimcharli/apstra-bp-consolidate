@@ -135,7 +135,8 @@ def create_new_access_switch_pair(order, switch_pair_spec):
     REDUNDANCY_GROUP = 'redundancy_group'
 
     # skip if the access switch piar already exists
-    tor_a = f"{order.tor_label}a"
+    tor_a = f"{order.switch_label_pair[0]}"
+    tor_b = f"{order.switch_label_pair[1]}"
     if order.main_bp.get_system_node_from_label(tor_a):
         logging.info(f"{tor_a} already exists in main blueprint")
         return
@@ -170,10 +171,10 @@ def create_new_access_switch_pair(order, switch_pair_spec):
         given_label = leaf['leaf']['label']
         # when the label is <tor_label>1, rename it to <tor_label>a
         if given_label[-1] == '1':
-            new_label = f"{order.tor_label}a"
+            new_label = tor_a
         # when the labe is <tor_label>2, rename it to <tor_label>b
         elif given_label[-1] == '2':
-            new_label = f"{order.tor_label}b"
+            new_label = tor_b
         else:
             logging.warning(f"skipp chaning name {given_label=}")
             continue

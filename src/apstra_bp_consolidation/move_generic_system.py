@@ -79,6 +79,7 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
     logging.info(f"Creating new generic systems in {main_bp.label}: {total_gs}")
 
     for generic_system_label, generic_system_data in generic_system_data.items():
+        logging.info(f"{generic_system_label=} {generic_system_data=}")
         if main_bp.get_system_node_from_label(generic_system_label):
             # this generic system already exists
             logging.info(f"skipping: {generic_system_label} already exists in the main blueprint")
