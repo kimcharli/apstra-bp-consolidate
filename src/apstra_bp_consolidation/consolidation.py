@@ -82,7 +82,7 @@ def pretty_yaml(data: dict, label: str) -> None:
     logging.debug(f"==== {label}\n{yaml.dump(data)}\n====")
 
 
-@click.command(name='move-all')
+@click.command(name='move-all', help='run all the steps in sequence')
 def move_all():
     order = ConsolidationOrder()
 
@@ -101,6 +101,7 @@ def move_all():
     from apstra_bp_consolidation.move_device import order_move_devices
     order_move_devices(order)
 
+    
 
 @click.group()
 # @click.option('--log-level', envvar='logging_level', help='The logging level')
@@ -125,6 +126,10 @@ from apstra_bp_consolidation.move_device import click_move_devices
 cli.add_command(click_move_devices)
 
 cli.add_command(move_all)
+
+from apstra_bp_consolidation.find_missing_vn import find_missing_vn
+cli.add_command(find_missing_vn)
+
 
 if __name__ == "__main__":
     move_all()

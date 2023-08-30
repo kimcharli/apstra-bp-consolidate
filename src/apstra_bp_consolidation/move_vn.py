@@ -100,6 +100,9 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
         leaf_found = False
         # get the vn spec from the staged data
         vn_spec = the_bp.get_virtual_network(vni)
+        if vn_spec is None:
+            logging.warning(f"{vni=} absent -- skipping")
+            continue
         # iterate bound_to and add the access switch pair to the upstream leaf pair
         for bound_to_index in range(len(vn_spec['bound_to'])):
             this_bound_to = vn_spec['bound_to'][bound_to_index]
@@ -133,7 +136,7 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
 
 
 import click
-@click.command(name='move-virtual-networks')
+@click.command(name='move-virtual-networks', help='step 3 - assign virtual networks to new access switch pair')
 def click_move_virtual_networks():
     order = ConsolidationOrder()
     order_move_virtual_networks(order)

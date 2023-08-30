@@ -9,12 +9,12 @@ from apstra_bp_consolidation.consolidation import ConsolidationOrder
 from apstra_bp_consolidation.consolidation import prep_logging
 from apstra_bp_consolidation.apstra_blueprint import CkEnum
 
-def build_access_switch_fabric_links_dict(links_dict:dict) -> dict:
+def build_access_switch_fabric_links_dict(a_link_nodes:dict) -> dict:
     '''
     Build each "links" data from tor_interface_nodes_in_main
-    It is assumed that the interface names are in et-0/0/48-b format
+    It is assumed that the generic system interface names are in et-0/0/48-b format
     '''
-    # logging.debug(f"{len(links_dict)=}, {links_dict=}")
+    # logging.debug(f"{len(a_link_nodes)=}, {a_link_nodes=}")
 
     translation_table = {
         "et-0/0/48-a": { 'system_peer': 'first', 'system_if_name': 'et-0/0/48' },
@@ -28,14 +28,17 @@ def build_access_switch_fabric_links_dict(links_dict:dict) -> dict:
         "et-0/0/49b": { 'system_peer': 'second', 'system_if_name': 'et-0/0/49' },
     }
 
-    tor_intf_name = links_dict['gs_intf']['if_name']
+    tor_intf_name = a_link_nodes[CkEnum.GENERIC_SYSTEM_INTERFACE]['if_name']
+    if tor_intf_name not in translation_table:
+        logging.warning(f"a_link_nodes[{CkEnum.GENERIC_SYSTEM_INTERFACE}]['if_name']: {tor_intf_name}, none of {[x for x in translation_table.keys()]}")
+        return None
     link_candidate = {
             "lag_mode": "lacp_active",
             "system_peer": translation_table[tor_intf_name]['system_peer'],
             "switch": {
-                "system_id": links_dict[CkEnum.MEMBER_SWITCH]['id'],
+                "system_id": a_link_nodes[CkEnum.MEMBER_SWITCH]['id'],
                 "transformation_id": 2,
-                "if_name": links_dict[CkEnum.MEMBER_INTERFACE]['if_name']
+                "if_name": a_link_nodes[CkEnum.MEMBER_INTERFACE]['if_name']
             },
             "system": {
                 "system_id": None,
@@ -195,10 +198,11 @@ def get_tor_ae_id_in_main(tor_interface_nodes_in_main, tor_name):
     if CkEnum.EVPN_INTERFACE not in tor_interface_nodes_in_main[0]:
         logging.warning(f"{tor_name}  does not have AE in main blueprint")
         return None
+    # every items should have the AE data
     return tor_interface_nodes_in_main[0][CkEnum.EVPN_INTERFACE]['id']
 
 
-@click.command(name='move-access-switches')
+@click.command(name='move-access-switches', help='step 1 - replace the generic system in main blueprint with the access switch pair from tor blueprint')
 def click_move_access_switches():    
     order = ConsolidationOrder()
     order_move_access_switches(order)
@@ -208,6 +212,7 @@ def order_move_access_switches(order):
 
     tor_name = order.config['blueprint']['tor']['torname']
 
+    # TODO: use bp/cabling-maps to get live interface names
     tor_interface_nodes_in_main = order.main_bp.get_server_interface_nodes(tor_name)
     tor_ae_id_in_main = get_tor_ae_id_in_main(tor_interface_nodes_in_main, tor_name)
 

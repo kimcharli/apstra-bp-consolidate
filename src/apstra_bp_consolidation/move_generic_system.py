@@ -3,6 +3,7 @@
 import json
 import logging
 import click
+import time
 
 from apstra_bp_consolidation.consolidation import ConsolidationOrder
 from apstra_bp_consolidation.apstra_blueprint import CkEnum
@@ -74,16 +75,30 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
     """
     # to cache the system id of the systems includin leaf
     main_bp = order.main_bp
-    total_gs = len(generic_system_data)
-    current_gs = 1
-    logging.info(f"Creating new generic systems in {main_bp.label}: {total_gs}")
+    total_generic_system_count = len(generic_system_data)
+    current_generic_system_count = 1
+    logging.info(f"Creating new generic systems for {main_bp.label=}: {total_generic_system_count=}")
 
-    for generic_system_label, generic_system_data in generic_system_data.items():
-        logging.info(f"{generic_system_label=} {generic_system_data=}")
+    # wait for the access switch to be created
+    for switch_label in order.switch_label_pair:
+        for i in range(5):
+            switch_nodes = main_bp.get_system_node_from_label(switch_label)
+            # it returns None if the system is not created yet
+            if switch_nodes:
+                break
+            logging.info(f"waiting for {switch_label} to be created in {main_bp.label}")
+            time.sleep(3)
+    logging.info(f"{order.switch_label_pair} present in {main_bp.label}")
+
+    # itrerate through the generic systems retrived from the TOR blueprint
+    for generic_system_label, gs_data in generic_system_data.items():
+        # working with a generic system 
+        logging.debug(f"Creating {generic_system_label=} {gs_data=}")
+        # this generic system is present in the main blueprint
         if main_bp.get_system_node_from_label(generic_system_label):
-            # this generic system already exists
-            logging.info(f"skipping: {generic_system_label} already exists in the main blueprint")
+            logging.info(f"skipping: {generic_system_label} is present in the main blueprint")
             continue
+        # this generic system is absent in main blueprint. Create it.
         lag_group = {}
         generic_system_spec = {
             'links': [],
@@ -91,7 +106,7 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
         }
 
         # the link data has dependancy on the order
-        link_list = [ v for k, v in generic_system_data.items()]
+        link_list = [ v for k, v in gs_data.items()]
         for i in range(len(link_list)):
         # for _, link_data in generic_system_data.items():
             link_data = link_list[i]
@@ -101,6 +116,7 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
                     'system_id': None
                 },
                 'switch': {
+                    # TODO: this might need to wait for the system to be created
                     'system_id': main_bp.get_system_node_from_label(link_data['sw_label'])['id'],
                     'transformation_id': main_bp.get_transformation_id(link_data['sw_label'], link_data['sw_if_name'] , link_data['speed']),
                     'if_name': link_data['sw_if_name'],
@@ -120,13 +136,13 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
             'port_channel_id_min': 0,
             'port_channel_id_max': 0,
             'logical_device': {
-                'display_name': f"auto-{link_data['speed']}x{len(generic_system_data)}",
-                'id': f"auto-{link_data['speed']}x{len(generic_system_data)}",
+                'display_name': f"auto-{link_data['speed']}x{len(gs_data)}",
+                'id': f"auto-{link_data['speed']}x{len(gs_data)}",
                 'panels': [
                     {
                         'panel_layout': {
                             'row_count': 1,
-                            'column_count': len(generic_system_data),
+                            'column_count': len(gs_data),
                         },
                         'port_indexing': {
                             'order': 'T-B, L-R',
@@ -135,7 +151,7 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
                         },
                         'port_groups': [
                             {
-                                'count': len(generic_system_data),
+                                'count': len(gs_data),
                                 'speed': {
                                     'unit': link_data['speed'][-1:],
                                     'value': int(link_data['speed'][:-1])
@@ -152,7 +168,7 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
         }
         generic_system_spec['new_systems'].append(new_system)
         ethernet_interfaces = [f"{main_bp.get_system_label(x['switch']['system_id'])}:{x['switch']['if_name']}" for x in generic_system_spec['links']]
-        logging.info(f"adding {current_gs}/{total_gs} {generic_system_label} with {ethernet_interfaces} {len(lag_group)} LAG in the blueprint {main_bp.label}")
+        logging.info(f"adding {current_generic_system_count}/{total_generic_system_count} {generic_system_label} with {ethernet_interfaces} {len(lag_group)} LAG in the blueprint {main_bp.label}")
         generic_system_created = main_bp.add_generic_system(generic_system_spec)
         logging.debug(f"generic_system_created: {generic_system_created}")
 
@@ -193,10 +209,10 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
 
 
 
-        current_gs += 1
+        current_generic_system_count += 1
 
 
-@click.command(name='move-generic-systems')
+@click.command(name='move-generic-systems', help='step 2 - create the generic systems under new access switches')
 def click_move_generic_systems():
     order = ConsolidationOrder()
     order_move_generic_systems(order)

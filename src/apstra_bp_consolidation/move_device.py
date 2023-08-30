@@ -5,7 +5,7 @@ import click
 
 from apstra_bp_consolidation.consolidation import ConsolidationOrder
 
-@click.command(name='move-devices')
+@click.command(name='move-devices', help='setp 5 - undeploy device from tor blueprint and deploy to main blueprint')
 def click_move_devices():
     order = ConsolidationOrder()
     order_move_devices(order)

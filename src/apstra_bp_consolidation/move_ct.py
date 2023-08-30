@@ -305,7 +305,7 @@ def associate_cts(the_bp, interface_vlan_table, switch_label_pair: list):
         
 
 import click
-@click.command(name='move-cts')
+@click.command(name='move-cts', help='step 4 - assign CTs to new generic systems')
 def click_move_cts():
     order = ConsolidationOrder()
     order_move_cts(order)

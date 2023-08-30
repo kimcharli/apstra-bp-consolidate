@@ -87,8 +87,8 @@ class CkApstraSession:
             self.logger.warning("name is None")
             return None
         if device_profile_name not in self.device_profile_cache:
-            url = f"{self.url_prefix}/device-profiles"
-            device_profiles = self.session.get(url).json()['items']
+            # url = f"{self.url_prefix}/device-profiles"
+            device_profiles = self.get_items('device-profiles')['items']
             self.device_profile_cache[device_profile_name] = [ x for x in device_profiles if x['id'] == device_profile_name ][0]
         return self.device_profile_cache[device_profile_name]
 
@@ -102,8 +102,8 @@ class CkApstraSession:
         Returns:
             The logical device, or None if the logical device does not exist.
         """
-        url = f"{self.url_prefix}/design/logical-devices/{id}"
-        return self.session.get(url).json()
+        # url = f"{self.url_prefix}/design/logical-devices/{id}"
+        return self.get_items(f"design/logical-devices/{id}")
 
     def get_items(self, url: str) -> dict:
         """
@@ -136,7 +136,7 @@ class CkApstraSession:
     def patch_throttled(self, url: str, spec: dict, params: None) -> dict:
         """
         """
-        throttle_seconds = 5
+        throttle_seconds = 10
         patched = self.session.patch(url, json=spec, params=params)
         try:
             while True:
@@ -164,6 +164,15 @@ class CkApstraSession:
         """
         self.logger.info(f"{self.token=}")
 
+    def options_blueprints(self) -> dict:
+        """
+        Get the options for blueprints.
+
+        Returns:
+            The options for blueprints.
+        """
+        url = f"{self.url_prefix}/blueprints"
+        return self.session.options(url).json()
 
 if __name__ == "__main__":
     log_level = logging.DEBUG

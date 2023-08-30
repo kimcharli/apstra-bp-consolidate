@@ -19,13 +19,14 @@ class CkEnum:
     LINK = 'link'
     TAG = 'tag'
     GENERIC_SYSTEM = 'generic-system'
+    GENERIC_SYSTEM_INTERFACE = 'gs-intf'
     TAGGED_VLANS = 'tagged-vlans'
     UNTAGGED_VLAN = 'untagged-vlan'
     REDUNDANCY_GROUP = 'redundancy-group'    
 
 class CkApstraBlueprint:
 
-    def __init__(self, session: CkApstraSession, label: str) -> None:
+    def __init__(self, session: CkApstraSession, label: str, id: str = None) -> None:
         """
         Initialize a CkApstraBlueprint object.
 
@@ -35,8 +36,12 @@ class CkApstraBlueprint:
         """
         self.session = session
         self.label = label
-        self.id = None
-        self.get_id()
+        self.id = id
+        if id:
+            this_blueprint = self.session.get_items(f"blueprints/{id}")
+            self.label = this_blueprint['label']
+        else:
+            self.get_id()
         self.url_prefix = f"{self.session.url_prefix}/blueprints/{self.id}"
         self.logger = logging.getLogger(f"CkApstraBlueprint({label})")
 
@@ -51,8 +56,7 @@ class CkApstraBlueprint:
         Returns:
             The ID of the blueprint.
         """
-        url = f"{self.session.url_prefix}/blueprints"
-        blueprints = self.session.session.get(url).json()['items']
+        blueprints = self.session.get_items('blueprints')['items']
         for blueprint in blueprints:
             if blueprint['label'] == self.label:
                 self.id = blueprint['id']
@@ -150,7 +154,7 @@ class CkApstraBlueprint:
         interface_query = f"""
             match(
                 node('system', system_type='server', label='{system_label}')
-                    .out('hosted_interfaces').node('interface', name='gs_intf')
+                    .out('hosted_interfaces').node('interface', name='{CkEnum.GENERIC_SYSTEM_INTERFACE}')
                     .out('link').node('link', name='{CkEnum.LINK}')
                     .in_('link').node('interface', name='{CkEnum.MEMBER_INTERFACE}')
                     .in_('hosted_interfaces').node('system', system_type='switch', name='{CkEnum.MEMBER_SWITCH}'),
@@ -175,7 +179,7 @@ class CkApstraBlueprint:
         interface_query = f"""
             match(
                 node('system', system_type='server', name='{CkEnum.GENERIC_SYSTEM}')
-                    .out('hosted_interfaces').node('interface', name='gs_intf')
+                    .out('hosted_interfaces').node('interface', name='{CkEnum.GENERIC_SYSTEM_INTERFACE}')
                     .out('link').node('link', name='{CkEnum.LINK}')
                     .in_('link').node('interface', if_type='ethernet', name='{CkEnum.MEMBER_INTERFACE}')
                     .in_('hosted_interfaces').node('system', system_type='switch', label=is_in({system_labels}), name='{CkEnum.MEMBER_SWITCH}'),
@@ -303,12 +307,12 @@ class CkApstraBlueprint:
 
     def get_virtual_network(self, vni):
         '''
-        Get virtual network data from vni
+        Get virtual network data from vni or None
         '''
         vn_id_got = self.query(f"node('virtual_network', vn_id='{vni}', name='vn')")
         if len(vn_id_got) == 0:
             self.logger.warning(f"{vni=} not found")
-            return 
+            return None
         vn_id = vn_id_got[0]['vn']['id']
         return self.session.get_items(f"blueprints/{self.id}/virtual-networks/{vn_id}")
     
