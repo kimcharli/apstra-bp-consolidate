@@ -465,6 +465,14 @@ class CkApstraBlueprint:
         # it will be 204 with b''
         return uuid_batch
 
+    def get_cabling_maps(self):
+        '''
+        Get the cabling maps
+        '''
+        url = f"{self.url_prefix}/cabling-maps"
+        return self.session.session.get(url).json()
+
+
     def revert(self):
         '''
         Revert the blueprint

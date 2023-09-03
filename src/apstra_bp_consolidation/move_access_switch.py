@@ -70,11 +70,14 @@ def build_switch_pair_spec(tor_interface_nodes_in_main, tor_label) -> dict:
 def remove_old_generic_system_from_main(order, tor_ae_id_in_main, tor_interface_nodes_in_main):
     """
     Remove the old generic system from the main blueprint
+      remove the connectivity templates assigned to the generic system
+      remove the generic system (links)
     """
     if tor_ae_id_in_main is None:
         logging.warning(f"tor_ae_id_in_main is None")
         return
     
+    # remove the connectivity templates assigned to the generic system
     cts_to_remove = order.main_bp.get_interface_cts(tor_ae_id_in_main)
 
     # damping CTs in chunks
@@ -101,6 +104,7 @@ def remove_old_generic_system_from_main(order, tor_ae_id_in_main, tor_interface_
         batch_result = order.main_bp.batch(batch_ct_spec, params={"comment": "batch-api"})
         del cts_to_remove[:throttle_number]
 
+    # remove the generic system (links)
     link_remove_spec = {
         "operations": [
             {
@@ -214,6 +218,8 @@ def order_move_access_switches(order):
 
     # TODO: use bp/cabling-maps to get live interface names
     tor_interface_nodes_in_main = order.main_bp.get_server_interface_nodes(tor_name)
+    # logging.warning(f"{tor_interface_nodes_in_main=}")
+
     tor_ae_id_in_main = get_tor_ae_id_in_main(tor_interface_nodes_in_main, tor_name)
 
     # build switch pair spec from the main blueprint generic system links

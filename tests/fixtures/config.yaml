@@ -14,11 +14,32 @@ blueprint:
     # torname: atl1tor-r5r3 # the generic system name to be removed in the main blueprint 
     # switch_names: [ atl1tor-r5r3c, atl1tor-r5r3d ]
     # new_interface_map: _ATL-AS-5120-48T
-    # ################
-    # name: AZ-1_1-R5R15
-    # torname: atl1tor-r5r15 # the generic system name to be removed in the main blueprint 
-    # switch_names: [ atl1tor-r5r15a, atl1tor-r5r15b ]
-    # new_interface_map: _ATL-AS-5120-48T
+    # leaf_links:
+    # - speed: 100G
+    #   leaf_label: atl1lef5-r5r1
+    #   leaf_if_name: xe-0/0/2
+    #   access_label: atl1tor-r5r3c
+    #   access_if_name: xe-0/0/48
+    # - speed: 100G
+    #   leaf_label: atl1lef5-r5r1
+    #   leaf_if_name: xe-0/0/3
+    #   access_label: atl1tor-r5r3d
+    #   access_if_name: xe-0/0/48
+    # - speed: 100G
+    #   leaf_label: atl1lef6-r5r2
+    #   leaf_if_name: xe-0/0/2
+    #   access_label: atl1tor-r5r3c
+    #   access_if_name: xe-0/0/49
+    # - speed: 100G
+    #   leaf_label: atl1lef6-r5r2
+    #   leaf_if_name: xe-0/0/3
+    #   access_label: atl1tor-r5r3d
+    #   access_if_name: xe-0/0/49
+    ################
+    name: AZ-1_1-R5R15
+    torname: atl1tor-r5r15 # the generic system name to be removed in the main blueprint 
+    switch_names: [ atl1tor-r5r15a, atl1tor-r5r15b ]
+    new_interface_map: _ATL-AS-5120-48T
     # ################
     # name: AZ-3_2-R1R1
     # torname: atl1tor-r1r1 # the generic system name to be removed in the main blueprint 
@@ -49,11 +70,11 @@ blueprint:
     # torname: atl1tor-r5r4 # the generic system name to be removed in the main blueprint 
     # switch_names: [ atl1tor-r5r4a, atl1tor-r5r4b ]
     # new_interface_map: _ATL-AS-5120-48T
-    ################
-    name: AZ-4_1-R4R26
-    torname: atl1tor-r4r26 # the generic system name to be removed in the main blueprint 
-    switch_names: [ atl1tor-r4r26a, atl1tor-r4r26b ]
-    new_interface_map: _ATL-AS-5120-48T
+    # ################
+    # name: AZ-4_1-R4R26
+    # torname: atl1tor-r4r26 # the generic system name to be removed in the main blueprint 
+    # switch_names: [ atl1tor-r4r26a, atl1tor-r4r26b ]
+    # new_interface_map: _ATL-AS-5120-48T
     # generic_systems:
     #   <generic_system_label>:
     #     <link_id>:
@@ -65,12 +86,6 @@ blueprint:
     #         tags: []
     #         tagged_vlan: []
     #         untagged_vlan: 
-
-apstra_server:
-  host: nf-apstra.pslab.link
-  port: 443
-  username: admin
-  password: "zaq1@WSXcde3$RFV"
 
 
 

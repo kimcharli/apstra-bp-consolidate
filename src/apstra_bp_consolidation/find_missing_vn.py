@@ -23,9 +23,9 @@ def order_find_missing_vn(order):
         vni in main_vni_list or main_vni_list.append(vni)
     logging.info(f"{len(main_vni_list)=}")
 
-    bp_list = order.main_bp.session.options_blueprints()
+    bp_list = order.session.list_blueprint_ids()
     logging.debug(f"{bp_list=}")
-    for bp_id in bp_list['items']:
+    for bp_id in bp_list:
         this_bp = CkApstraBlueprint(order.session, None, bp_id)
         logging.debug(f"checking BP {this_bp.label}")
         this_vni_nodes = this_bp.query(all_vn_query)

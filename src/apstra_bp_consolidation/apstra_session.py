@@ -164,15 +164,15 @@ class CkApstraSession:
         """
         self.logger.info(f"{self.token=}")
 
-    def options_blueprints(self) -> dict:
+    def list_blueprint_ids(self) -> list:
         """
-        Get the options for blueprints.
+        Get the list of blueprint ids
 
         Returns:
-            The options for blueprints.
+            The list for blueprint id.
         """
         url = f"{self.url_prefix}/blueprints"
-        return self.session.options(url).json()
+        return self.session.options(url).json()['items']
 
 if __name__ == "__main__":
     log_level = logging.DEBUG

@@ -49,28 +49,31 @@ def deep_diff(dict1, dict2, path=""):
     return differences
 
 
-def pull_vni_ids(the_bp, switch_label_pair: list) -> list:
-    """
-    Pull the vni ids present in the switch pair
+# def pull_vni_ids(the_bp, switch_label_pair: list) -> list:
+#     """
+#     Pull the vni ids present in the switch pair
 
-    """
-    logging.debug(f"pulling vni ids for {switch_label_pair=} from {the_bp.label}")
-    vn_list_query = f"""
-        match(
-            node('system', label=is_in({switch_label_pair}))
-            .out().node('vn_instance')
-            .out().node('virtual_network', name='vn')
-        ).distinct(['vn'])"""
-    vn_list = the_bp.query(vn_list_query)
-    vni_list = [ x['vn']['vn_id'] for x in vn_list ]
-    logging.debug(f"found {len(vni_list)=}")
-    return vni_list
+#     """
+#     logging.debug(f"pulling vni ids for {switch_label_pair=} from {the_bp.label}")
+#     vn_list_query = f"""
+#         match(
+#             node('system', label=is_in({switch_label_pair}))
+#             .out().node('vn_instance')
+#             .out().node('virtual_network', name='vn')
+#         ).distinct(['vn'])"""
+#     vn_list = the_bp.query(vn_list_query)
+#     vni_list = [ x['vn']['vn_id'] for x in vn_list ]
+#     logging.debug(f"found {len(vni_list)=}")
+#     return vni_list
 
-def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
+# def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
+def access_switch_assign_vns(order):
     """
     Assign VN to the access switch pair
     """
-    logging.debug(f"assigning vni ids for {switch_label_pair=} {vni_list[0]=}")
+    switch_label_pair = order.switch_label_pair
+    the_bp = order.main_bp
+    logging.debug(f"assigning vni ids for {switch_label_pair=}")
 
     # get the redundancy group id of the access switch pair and the leaf switch pair
     rg_query = f"""node(type='redundancy_group', name='rg')
@@ -86,7 +89,7 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
         return
     rg_id = rg_got[0]['rg']['id']
     leaf_rg_id = rg_got[0]['leaf-rg']['id']
-    total_vni = len(vni_list)
+    total_vni = len(order.vni_list)
     total_updated = 0
     total_skipped = 0
     total_leaf_missing = 0
@@ -94,18 +97,20 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
 
     # iterate vni list
     for vni_index in range(total_vni):
-        vni = vni_list[vni_index]
+        vni = order.vni_list[vni_index]
         vni_count = vni_index + 1
         modified = False
         leaf_found = False
         # get the vn spec from the staged data
-        vn_spec = the_bp.get_virtual_network(vni)
-        if vn_spec is None:
+        existing_vn_spec = the_bp.get_virtual_network(vni)
+        logging.warning(f"{vni=} {existing_vn_spec=}")
+        return
+        if existing_vn_spec is None:
             logging.warning(f"{vni=} absent -- skipping")
             continue
         # iterate bound_to and add the access switch pair to the upstream leaf pair
-        for bound_to_index in range(len(vn_spec['bound_to'])):
-            this_bound_to = vn_spec['bound_to'][bound_to_index]
+        for bound_to_index in range(len(existing_vn_spec['bound_to'])):
+            this_bound_to = existing_vn_spec['bound_to'][bound_to_index]
             if this_bound_to['system_id'] == leaf_rg_id:
                 leaf_found = True
                 # it is already there
@@ -128,8 +133,8 @@ def access_switch_assign_vns(the_bp, vni_list: list, switch_label_pair: list):
             continue
 
         # endpoint would fail due to missing label
-        del vn_spec['endpoints']
-        vn_patched = the_bp.patch_virtual_network(vn_spec)
+        del existing_vn_spec['endpoints']
+        vn_patched = the_bp.patch_virtual_network(existing_vn_spec)
         logging.info(f"{vni_count}/{total_vni} {vni=}, {vn_patched=}")
     
     logging.info(f"{switch_label_pair=} {total_vni=}, {total_updated=}, {total_skipped=}, {total_leaf_missing=}")
@@ -145,10 +150,11 @@ def order_move_virtual_networks(order):
     logging.info(f"======== Moving Virtual Networks for {order.switch_label_pair} from {order.tor_bp.label} to {order.main_bp.label}")
     ########
     # assign virtual networks
-    vni_list = pull_vni_ids(order.tor_bp, order.switch_label_pair)
+    # vni_list = pull_vni_ids(order.tor_bp, order.switch_label_pair)
 
     # assign connectivity templates
-    access_switch_assign_vns(order.main_bp, vni_list, order.switch_label_pair)
+    # access_switch_assign_vns(order.main_bp, vni_list, order.switch_label_pair)
+    access_switch_assign_vns(order)
 
 
 if __name__ == '__main__':
