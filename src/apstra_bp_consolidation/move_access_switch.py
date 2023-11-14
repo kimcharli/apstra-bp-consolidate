@@ -214,7 +214,7 @@ def click_move_access_switches():
 def order_move_access_switches(order):
     logging.info(f"======== Moving Access Switches for {order.switch_label_pair} from {order.tor_bp.label} to {order.main_bp.label}")
 
-    tor_name = order.config['blueprint']['tor']['torname']
+    tor_name = order.tor_name
 
     # TODO: use bp/cabling-maps to get live interface names
     tor_interface_nodes_in_main = order.main_bp.get_server_interface_nodes(tor_name)

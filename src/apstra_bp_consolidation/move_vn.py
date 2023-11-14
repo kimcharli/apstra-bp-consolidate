@@ -103,8 +103,8 @@ def access_switch_assign_vns(order):
         leaf_found = False
         # get the vn spec from the staged data
         existing_vn_spec = the_bp.get_virtual_network(vni)
-        logging.warning(f"{vni=} {existing_vn_spec=}")
-        return
+        logging.debug(f"{vni=} {existing_vn_spec=}")
+        # return
         if existing_vn_spec is None:
             logging.warning(f"{vni=} absent -- skipping")
             continue

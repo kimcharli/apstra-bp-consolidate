@@ -57,7 +57,9 @@ class ConsolidationOrder:
     # cabling_maps_yaml_file
     # main_bp
     # tor_bp
+    # main_bp_label
     # tor_label # TODO: get this from cabling map
+    # tor_name   ## the generic system name in the main blueprint
     # switch_label_pair
     # vni_list: List[int]
     # PLAN
@@ -70,53 +72,42 @@ class ConsolidationOrder:
     #     'access_if_name': 'et-0/0/48'
     #  }]
 
-    def __init__(self, env_file_input: str = None):
+    def __init__(self):
         """
         Build the consolidation order object from the env file path
         """
-        import yaml
         import os
         from dotenv import load_dotenv
 
-        env_file = env_file_input or ENV_FILE
-        load_dotenv(env_file)
-        config_yaml_input_file = os.getenv('config_yaml_input_file')
+        load_dotenv()
         log_level = os.getenv('logging_level')
         prep_logging(log_level)
-        # order = ConsolidationOrder(config_yaml_input_file)
 
-        self.config_yaml_input_file = config_yaml_input_file
-        with open(config_yaml_input_file, 'r') as file:
-            self.config = yaml.safe_load(file)
         apstra_server_host = os.getenv('apstra_server_host')
         apstra_server_port = os.getenv('apstra_server_port')
         apstra_server_username = os.getenv('apstra_server_username')
         apstra_server_password = os.getenv('apstra_server_password')
 
-        print(f"{config_yaml_input_file=} {log_level=} {apstra_server_host=} {apstra_server_port=} {apstra_server_username=} {apstra_server_password=}")
+        print(f"{log_level=} {apstra_server_host=} {apstra_server_port=} {apstra_server_username=} {apstra_server_password=}")
 
-        # the session was created from yaml config. Now it takes from env file
-        # apstra_server = self.config['apstra_server']
-        # self.session = CkApstraSession(
-        #     apstra_server['host'], 
-        #     apstra_server['port'], 
-        #     apstra_server['username'],
-        #     apstra_server['password']
-        #     )
         self.session = CkApstraSession(
             apstra_server_host, 
             apstra_server_port,
             apstra_server_username,
             apstra_server_password,
             )
-        self.main_bp = CkApstraBlueprint(self.session, self.config['blueprint']['main']['name'])
-        self.tor_bp = CkApstraBlueprint(self.session, self.config['blueprint']['tor']['name'])
-        # print(f"{self.main_bp.id=}, {self.main_bp.label}, {self.tor_bp.id=}, {self.tor_bp.label}, {self.config['blueprint']['tor']=}")
-        access_switch_interface_map_label = self.config['blueprint']['tor']['new_interface_map']
+        self.main_bp_label = os.getenv('main_bp')
+        self.tor_label = os.getenv('tor_bp')
+        self.tor_name = os.getenv('tor_name')
+        self.access_switch_interface_map_label = os.getenv('tor_im_new')
+
+        self.main_bp = CkApstraBlueprint(self.session, self.main_bp_label)
+        self.tor_bp = CkApstraBlueprint(self.session, self.tor_label)
         self.logger = logging.getLogger(f"ConsolidationOrder({self.main_bp.label}<-{self.tor_bp.label})")
 
-        self.tor_label = self.config['blueprint']['tor']['torname']
-        self.switch_label_pair = self.config['blueprint']['tor']['switch_names']
+        tor_switch_nodes = self.tor_bp.query("node('system', name='system', management_level='full_control')")
+        self.switch_label_pair = [ x['system']['label'] for x in tor_switch_nodes ]
+
         self.logger.debug(f"{self.main_bp.id=}, {self.tor_bp.id=}")
         # self.leaf_links = self.pull_leaf_links()
         # self.vni_list = []
