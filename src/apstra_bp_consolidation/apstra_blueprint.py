@@ -267,6 +267,21 @@ class CkApstraBlueprint:
                         # self.logger.warning(f"{intf_name=}, {intf=}")
                         return transformation['transformation_id']
 
+    def patch_item(self, url: str, patch_spec: dict, params=None) -> dict:
+        """
+        Patch an items.
+
+        Args:
+            The url under /api/
+            The patch spec
+
+        Returns:
+            The return
+        """
+        url = f"{self.url_prefix}/{url}"
+        self.logger.debug(f"patch_item({url}, {patch_spec})")
+        return self.session.patch_item(url, patch_spec, params=params)
+
     def patch_leaf_server_link(self, link_spec: dict) -> None:
         """
         Patch a leaf-server link.
@@ -329,6 +344,12 @@ class CkApstraBlueprint:
             }
         patched = self.session.patch_throttled(f"{self.url_prefix}/virtual-networks/{patch_spec['id']}", spec=patch_spec, params=params)
         return patched
+    
+    def post_item(self, item_url, item_spec, params=None):
+        '''
+        Create an item
+        '''
+        return self.session.session.post(f"{self.url_prefix}/{item_url}", json=item_spec, params=params)
 
     def post_tagging(self, nodes, tags_to_add = None, tags_to_remove = None, params=None, print_prefix=None):
         '''

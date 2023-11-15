@@ -118,7 +118,7 @@ class CkApstraSession:
         url = f"{self.url_prefix}/{url}"
         return self.session.get(url).json()
 
-    def patch_item(self, url: str, spec: dict) -> dict:
+    def patch_item(self, url: str, patch_spec: dict, params=None) -> dict:
         """
         Patch an items.
 
@@ -130,8 +130,8 @@ class CkApstraSession:
             The return
         """
         url = f"{self.url_prefix}/{url}"
-        self.logger.debug(f"patch_item({url}, {spec})")
-        return self.session.patch(url, json=spec).json()
+        self.logger.debug(f"patch_item({url}, {patch_spec})")
+        return self.session.patch(url, json=patch_spec, params=params).json()
 
     def patch_throttled(self, url: str, spec: dict, params: None) -> dict:
         """

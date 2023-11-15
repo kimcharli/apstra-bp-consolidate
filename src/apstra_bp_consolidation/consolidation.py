@@ -122,7 +122,8 @@ class ConsolidationOrder:
         # rename the generic system in the main blueprint to avoid conflict
         # the maximum length is 32. Prefix 'r5r14-'
         old_patterns = ['_atl_rack_1_000_', '_atl_rack_1_001_', '_atl_rack_5120_001_']
-        prefix = self.tor_label[len('atl1tor-'):]
+        # get the prefix from tor_name
+        prefix = self.tor_name[len('atl1tor-'):]
         for pattern in old_patterns:
             if generic_system_from_tor_bp.startswith(pattern):
                 # replace the string with the prefix
