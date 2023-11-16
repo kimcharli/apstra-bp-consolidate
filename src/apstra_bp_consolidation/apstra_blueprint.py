@@ -199,6 +199,9 @@ class CkApstraBlueprint:
         # self.logger.debug(f"{interface_nodes=}")
         return interface_nodes
 
+    def get_switch_rendering(self, node_id):
+        resp = self.session.get_items(f"blueprints/{self.id}/nodes/{node_id}/config-rendering")
+        return resp['config']
 
     def get_single_vlan_ct_id(self, vn_id: int):
         '''

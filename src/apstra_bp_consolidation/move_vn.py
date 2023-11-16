@@ -121,10 +121,11 @@ def access_switch_assign_vns(order):
                 modified = True
                 break
         if modified:
-            logging.debug(f"{vni_count}/{total_vni} {vni=} -- updating")
+            # warning for visibility
+            logging.warning(f"{vni_count}/{total_vni} {vni=} -- updating")
             total_updated += 1
         elif leaf_found:
-            logging.debug(f"{vni_count}/{total_vni} {vni=} already in - skipping")
+            logging.warning(f"{vni_count}/{total_vni} {vni=} already in - skipping")
             total_skipped += 1
             continue
         else:
@@ -141,7 +142,7 @@ def access_switch_assign_vns(order):
 
 
 import click
-@click.command(name='move-virtual-networks', help='step 3 - assign virtual networks to new access switch pair')
+@click.command(name='a3-move-virtual-networks', help='step 3 - assign virtual networks to new access switch pair')
 def click_move_virtual_networks():
     order = ConsolidationOrder()
     order_move_virtual_networks(order)

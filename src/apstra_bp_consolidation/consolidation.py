@@ -60,6 +60,7 @@ class ConsolidationOrder:
     # main_bp_label
     # tor_label # TODO: get this from cabling map
     # tor_name   ## the generic system name in the main blueprint
+    # config_dir
     # switch_label_pair
     # vni_list: List[int]
     # PLAN
@@ -100,6 +101,7 @@ class ConsolidationOrder:
         self.tor_label = os.getenv('tor_bp')
         self.tor_name = os.getenv('tor_name')
         self.access_switch_interface_map_label = os.getenv('tor_im_new')
+        self.config_dir = os.getenv('config_dir')  # for pull-configurations
 
         self.main_bp = CkApstraBlueprint(self.session, self.main_bp_label)
         self.tor_bp = CkApstraBlueprint(self.session, self.tor_label)
@@ -243,6 +245,9 @@ cli.add_command(move_all)
 
 from apstra_bp_consolidation.find_missing_vn import find_missing_vn
 cli.add_command(find_missing_vn)
+
+from apstra_bp_consolidation.pull_configs import click_pull_configurations
+cli.add_command(click_pull_configurations)
 
 cli.add_command(click_collect_cabling_maps)
 

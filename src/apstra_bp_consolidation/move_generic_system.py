@@ -253,7 +253,7 @@ def new_generic_systems(order, generic_system_data:dict) -> dict:
         current_generic_system_count += 1
 
 
-@click.command(name='move-generic-systems', help='step 2 - create the generic systems under new access switches')
+@click.command(name='a2-move-generic-systems', help='step 2 - create the generic systems under new access switches')
 def click_move_generic_systems():
     order = ConsolidationOrder()
     order_move_generic_systems(order)

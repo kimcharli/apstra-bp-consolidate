@@ -206,7 +206,7 @@ def get_tor_ae_id_in_main(tor_interface_nodes_in_main, tor_name):
     return tor_interface_nodes_in_main[0][CkEnum.EVPN_INTERFACE]['id']
 
 
-@click.command(name='move-access-switches', help='step 1 - replace the generic system in main blueprint with the access switch pair from tor blueprint')
+@click.command(name='a1-move-access-switches', help='step 1 - replace the generic system in main blueprint with the access switch pair from tor blueprint')
 def click_move_access_switches():    
     order = ConsolidationOrder()
     order_move_access_switches(order)
